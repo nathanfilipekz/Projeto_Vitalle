@@ -1,0 +1,456 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ==================== ENUMS ====================
+
+enum UserRole {
+  SUPPORT
+  MANAGER
+  DOCTOR
+}
+
+enum SubscriptionStatus {
+  PENDING_PAYMENT
+  PENDING_CONTRACT_ACCEPT
+  ACTIVE
+  SUSPENDED
+  CANCELED
+  EXPIRED
+}
+
+enum SubscriptionPlan {
+  STANDARD
+  PLUS
+}
+
+enum BillingCycle {
+  MONTHLY
+  ANNUAL
+}
+
+enum AppointmentStatus {
+  SCHEDULED
+  CONFIRMED
+  CANCELED
+  RESCHEDULED
+  COMPLETED
+  NO_SHOW
+}
+
+enum PaymentStatus {
+  PENDING
+  APPROVED
+  DECLINED
+  REFUNDED
+  CANCELED
+}
+
+enum PaymentMethod {
+  PIX
+  CREDIT_CARD
+  BOLETO
+}
+
+enum InvoiceStatus {
+  PENDING
+  ISSUED
+  CANCELED
+  ERROR
+}
+
+enum WhatsAppMessageDirection {
+  INBOUND
+  OUTBOUND
+}
+
+enum WhatsAppMessageStatus {
+  SENT
+  DELIVERED
+  READ
+  FAILED
+}
+
+// ==================== MODELS ====================
+
+model Tenant {
+  id            String   @id @default(uuid()) @db.Uuid
+  name          String
+  document      String   @unique // CNPJ
+  email         String
+  phone         String?
+  logoUrl       String?  @map("logo_url")
+  isActive      Boolean  @default(true) @map("is_active")
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+  deletedAt     DateTime? @map("deleted_at")
+
+  users         User[]
+  doctors       Doctor[]
+  managers      Manager[]
+  patients      Patient[]
+  appointments  Appointment[]
+  subscriptions Subscription[]
+  payments      Payment[]
+  invoices      Invoice[]
+  contracts     ContractAcceptance[]
+  auditLogs     AuditLog[]
+  whatsappMessages WhatsAppMessage[]
+  medicalRecords   MedicalRecord[]
+  patientEvolutions PatientEvolution[]
+
+  @@map("tenants")
+}
+
+model User {
+  id            String   @id @default(uuid()) @db.Uuid
+  tenantId      String   @map("tenant_id") @db.Uuid
+  email         String
+  passwordHash  String   @map("password_hash")
+  name          String
+  role          UserRole
+  phone         String?
+  avatarUrl     String?  @map("avatar_url")
+  isActive      Boolean  @default(true) @map("is_active")
+  mfaEnabled    Boolean  @default(false) @map("mfa_enabled")
+  mfaSecret     String?  @map("mfa_secret")
+  lastLoginAt   DateTime? @map("last_login_at")
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+  deletedAt     DateTime? @map("deleted_at")
+
+  tenant        Tenant   @relation(fields: [tenantId], references: [id])
+  doctor        Doctor?
+  manager       Manager?
+  refreshTokens RefreshToken[]
+  auditLogs     AuditLog[]
+  contracts     ContractAcceptance[]
+
+  @@unique([email, tenantId])
+  @@index([tenantId])
+  @@index([email])
+  @@map("users")
+}
+
+model RefreshToken {
+  id          String   @id @default(uuid()) @db.Uuid
+  userId      String   @map("user_id") @db.Uuid
+  token       String   @unique
+  expiresAt   DateTime @map("expires_at")
+  createdAt   DateTime @default(now()) @map("created_at")
+  revokedAt   DateTime? @map("revoked_at")
+
+  user        User     @relation(fields: [userId], references: [id])
+
+  @@index([userId])
+  @@index([token])
+  @@map("refresh_tokens")
+}
+
+model Doctor {
+  id              String   @id @default(uuid()) @db.Uuid
+  tenantId        String   @map("tenant_id") @db.Uuid
+  userId          String   @unique @map("user_id") @db.Uuid
+  crm             String
+  specialty       String
+  bio             String?
+  consultationDuration Int @default(30) @map("consultation_duration")
+  workingHoursStart    String @default("08:00") @map("working_hours_start")
+  workingHoursEnd      String @default("18:00") @map("working_hours_end")
+  workingDays     Int[]    @default([1, 2, 3, 4, 5]) @map("working_days")
+  isActive        Boolean  @default(true) @map("is_active")
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+  deletedAt       DateTime? @map("deleted_at")
+
+  tenant          Tenant   @relation(fields: [tenantId], references: [id])
+  user            User     @relation(fields: [userId], references: [id])
+  appointments    Appointment[]
+  medicalRecords  MedicalRecord[]
+  patientEvolutions PatientEvolution[]
+
+  @@index([tenantId])
+  @@index([crm])
+  @@map("doctors")
+}
+
+model Manager {
+  id          String   @id @default(uuid()) @db.Uuid
+  tenantId    String   @map("tenant_id") @db.Uuid
+  userId      String   @unique @map("user_id") @db.Uuid
+  isActive    Boolean  @default(true) @map("is_active")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+  deletedAt   DateTime? @map("deleted_at")
+
+  tenant      Tenant   @relation(fields: [tenantId], references: [id])
+  user        User     @relation(fields: [userId], references: [id])
+
+  @@index([tenantId])
+  @@map("managers")
+}
+
+model Patient {
+  id            String   @id @default(uuid()) @db.Uuid
+  tenantId      String   @map("tenant_id") @db.Uuid
+  name          String
+  cpf           String
+  email         String?
+  phone         String
+  dateOfBirth   DateTime? @map("date_of_birth")
+  gender        String?
+  address       String?
+  city          String?
+  state         String?
+  zipCode       String?  @map("zip_code")
+  bloodType     String?  @map("blood_type")
+  allergies     String?
+  notes         String?
+  avatarUrl     String?  @map("avatar_url")
+  isActive      Boolean  @default(true) @map("is_active")
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+  deletedAt     DateTime? @map("deleted_at")
+
+  tenant        Tenant   @relation(fields: [tenantId], references: [id])
+  appointments  Appointment[]
+  medicalRecords MedicalRecord[]
+  patientEvolutions PatientEvolution[]
+  whatsappMessages  WhatsAppMessage[]
+
+  @@unique([cpf, tenantId])
+  @@index([tenantId])
+  @@index([phone])
+  @@index([name])
+  @@map("patients")
+}
+
+model Appointment {
+  id            String   @id @default(uuid()) @db.Uuid
+  tenantId      String   @map("tenant_id") @db.Uuid
+  doctorId      String   @map("doctor_id") @db.Uuid
+  patientId     String   @map("patient_id") @db.Uuid
+  dateTime      DateTime @map("date_time")
+  duration      Int      @default(30)
+  status        AppointmentStatus @default(SCHEDULED)
+  type          String?
+  notes         String?
+  cancelReason  String?  @map("cancel_reason")
+  confirmedAt   DateTime? @map("confirmed_at")
+  completedAt   DateTime? @map("completed_at")
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+  deletedAt     DateTime? @map("deleted_at")
+
+  tenant        Tenant   @relation(fields: [tenantId], references: [id])
+  doctor        Doctor   @relation(fields: [doctorId], references: [id])
+  patient       Patient  @relation(fields: [patientId], references: [id])
+
+  @@index([tenantId])
+  @@index([doctorId])
+  @@index([patientId])
+  @@index([dateTime])
+  @@index([status])
+  @@map("appointments")
+}
+
+model MedicalRecord {
+  id            String   @id @default(uuid()) @db.Uuid
+  tenantId      String   @map("tenant_id") @db.Uuid
+  patientId     String   @map("patient_id") @db.Uuid
+  doctorId      String   @map("doctor_id") @db.Uuid
+  chiefComplaint String? @map("chief_complaint")
+  historyPresentIllness String? @map("history_present_illness")
+  pastMedicalHistory    String? @map("past_medical_history")
+  familyHistory         String? @map("family_history")
+  socialHistory         String? @map("social_history")
+  reviewOfSystems       String? @map("review_of_systems")
+  physicalExamination   String? @map("physical_examination")
+  assessment            String?
+  plan                  String?
+  diagnosis             String?
+  prescription          String?
+  attachments           String[]
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+  deletedAt     DateTime? @map("deleted_at")
+
+  tenant        Tenant   @relation(fields: [tenantId], references: [id])
+  patient       Patient  @relation(fields: [patientId], references: [id])
+  doctor        Doctor   @relation(fields: [doctorId], references: [id])
+
+  @@index([tenantId])
+  @@index([patientId])
+  @@index([doctorId])
+  @@map("medical_records")
+}
+
+model PatientEvolution {
+  id            String   @id @default(uuid()) @db.Uuid
+  tenantId      String   @map("tenant_id") @db.Uuid
+  patientId     String   @map("patient_id") @db.Uuid
+  doctorId      String   @map("doctor_id") @db.Uuid
+  title         String
+  description   String
+  observations  String?
+  images        String[]
+  attachments   String[]
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+  deletedAt     DateTime? @map("deleted_at")
+
+  tenant        Tenant   @relation(fields: [tenantId], references: [id])
+  patient       Patient  @relation(fields: [patientId], references: [id])
+  doctor        Doctor   @relation(fields: [doctorId], references: [id])
+
+  @@index([tenantId])
+  @@index([patientId])
+  @@index([createdAt])
+  @@map("patient_evolutions")
+}
+
+model Subscription {
+  id            String   @id @default(uuid()) @db.Uuid
+  tenantId      String   @map("tenant_id") @db.Uuid
+  plan          SubscriptionPlan
+  billingCycle  BillingCycle @map("billing_cycle")
+  status        SubscriptionStatus @default(PENDING_PAYMENT)
+  priceMonthly  Decimal  @map("price_monthly") @db.Decimal(10, 2)
+  priceTotal    Decimal  @map("price_total") @db.Decimal(10, 2)
+  discount      Decimal? @db.Decimal(5, 2)
+  startDate     DateTime? @map("start_date")
+  endDate       DateTime? @map("end_date")
+  canceledAt    DateTime? @map("canceled_at")
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  tenant        Tenant   @relation(fields: [tenantId], references: [id])
+  payments      Payment[]
+
+  @@index([tenantId])
+  @@index([status])
+  @@map("subscriptions")
+}
+
+model Payment {
+  id              String   @id @default(uuid()) @db.Uuid
+  tenantId        String   @map("tenant_id") @db.Uuid
+  subscriptionId  String   @map("subscription_id") @db.Uuid
+  externalId      String?  @map("external_id")
+  amount          Decimal  @db.Decimal(10, 2)
+  method          PaymentMethod
+  status          PaymentStatus @default(PENDING)
+  paidAt          DateTime? @map("paid_at")
+  pixCode         String?  @map("pix_code")
+  pixQrCode       String?  @map("pix_qr_code")
+  cardLastFour    String?  @map("card_last_four")
+  webhookPayload  Json?    @map("webhook_payload")
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  tenant          Tenant   @relation(fields: [tenantId], references: [id])
+  subscription    Subscription @relation(fields: [subscriptionId], references: [id])
+  invoice         Invoice?
+
+  @@index([tenantId])
+  @@index([externalId])
+  @@index([status])
+  @@map("payments")
+}
+
+model Invoice {
+  id            String   @id @default(uuid()) @db.Uuid
+  tenantId      String   @map("tenant_id") @db.Uuid
+  paymentId     String   @unique @map("payment_id") @db.Uuid
+  externalId    String?  @map("external_id")
+  number        String?
+  status        InvoiceStatus @default(PENDING)
+  pdfUrl        String?  @map("pdf_url")
+  xmlUrl        String?  @map("xml_url")
+  issuedAt      DateTime? @map("issued_at")
+  emailSentAt   DateTime? @map("email_sent_at")
+  errorMessage  String?  @map("error_message")
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  tenant        Tenant   @relation(fields: [tenantId], references: [id])
+  payment       Payment  @relation(fields: [paymentId], references: [id])
+
+  @@index([tenantId])
+  @@index([status])
+  @@map("invoices")
+}
+
+model ContractAcceptance {
+  id              String   @id @default(uuid()) @db.Uuid
+  tenantId        String   @map("tenant_id") @db.Uuid
+  userId          String   @map("user_id") @db.Uuid
+  contractVersion String   @map("contract_version")
+  contractHash    String   @map("contract_hash")
+  ipAddress       String   @map("ip_address")
+  userAgent       String   @map("user_agent")
+  acceptedAt      DateTime @map("accepted_at")
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  tenant          Tenant   @relation(fields: [tenantId], references: [id])
+  user            User     @relation(fields: [userId], references: [id])
+
+  @@index([tenantId])
+  @@index([userId])
+  @@map("contract_acceptances")
+}
+
+model WhatsAppMessage {
+  id            String   @id @default(uuid()) @db.Uuid
+  tenantId      String   @map("tenant_id") @db.Uuid
+  patientId     String?  @map("patient_id") @db.Uuid
+  direction     WhatsAppMessageDirection
+  status        WhatsAppMessageStatus @default(SENT)
+  from          String
+  to            String
+  body          String
+  templateName  String?  @map("template_name")
+  externalId    String?  @map("external_id")
+  sentAt        DateTime @default(now()) @map("sent_at")
+  deliveredAt   DateTime? @map("delivered_at")
+  readAt        DateTime? @map("read_at")
+  failedReason  String?  @map("failed_reason")
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  tenant        Tenant   @relation(fields: [tenantId], references: [id])
+  patient       Patient? @relation(fields: [patientId], references: [id])
+
+  @@index([tenantId])
+  @@index([patientId])
+  @@index([externalId])
+  @@map("whatsapp_messages")
+}
+
+model AuditLog {
+  id          String   @id @default(uuid()) @db.Uuid
+  tenantId    String   @map("tenant_id") @db.Uuid
+  userId      String?  @map("user_id") @db.Uuid
+  action      String
+  entity      String
+  entityId    String?  @map("entity_id")
+  oldData     Json?    @map("old_data")
+  newData     Json?    @map("new_data")
+  ipAddress   String?  @map("ip_address")
+  userAgent   String?  @map("user_agent")
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  tenant      Tenant   @relation(fields: [tenantId], references: [id])
+  user        User?    @relation(fields: [userId], references: [id])
+
+  @@index([tenantId])
+  @@index([userId])
+  @@index([action])
+  @@index([entity])
+  @@index([createdAt])
+  @@map("audit_logs")
+}

@@ -1,0 +1,258 @@
+============================================================
+RESUMO DE DESENVOLVIMENTO - VITALLE
+Data: 21/05/2026
+Tipo: Ajustes finos no Dashboard + Agenda
+      (status na lista "Consultas de Hoje", "Novo Paciente"
+       conectado ao Supabase, atalhos duplicados removidos)
+Autor: Assistente Claude
+Skills utilizadas:
+  - .claude/skills (TLC spec-driven já incorporado)
+  - Supabase (tabela public.patients via supabase-js)
+============================================================
+
+ÍNDICE
+------
+1. Ajuste 1 - Dashboard: cores de status alinhadas à Agenda
+   + auto-refresh por visibilidade
+2. Ajuste 2 - "Novo Paciente" agora grava na tabela
+   public.patients (Supabase)
+3. Ajuste 3 - Modal Editar Consulta: linha de atalhos
+   coloridos (Confirmar / Reagendar / Cancelar) removida
+4. Arquivos tocados nesta sessão
+5. PENDÊNCIAS (em evidência)
+
+============================================================
+1. AJUSTE 1 - DASHBOARD "CONSULTAS DE HOJE"
+============================================================
+Problema: a pílula de status mostrada em cada linha de
+"Consultas de Hoje" usava uma paleta diferente da Agenda
+(SCHEDULED bege, CONFIRMED em verde claro, CANCELED rosa
+clarinho). Quando o usuário trocava o status na Agenda
+(Reagendado / Cancelado / Confirmado / Faltou) o Dashboard
+não dava o feedback visual esperado — em particular o
+"Confirmado" não aparecia em verde escuro como na Agenda.
+
+Mudança aplicada em
+frontend/src/app/(dashboard)/dashboard/page.tsx:
+
+  // statusColors (Dashboard) agora ESPELHA o mapa da Agenda:
+  CONFIRMED   -> bg-[#406B5B] text-white   (verde escuro)
+  SCHEDULED   -> bg-[#91AE9E] text-white   (verde claro)
+  CANCELED    -> bg-red-400  text-white
+  RESCHEDULED -> bg-[#B89D83] text-white   (marrom)
+  COMPLETED   -> bg-gray-400 text-white
+  NO_SHOW     -> bg-gray-300 text-gray-800
+
+Auto-refresh adicional:
+  Foi acrescentado um useEffect que dispara `refresh()`
+  sempre que a aba do Dashboard volta a ficar visível
+  (eventos 'visibilitychange' + 'focus'). Assim, qualquer
+  alteração de status feita em /agenda é refletida
+  automaticamente ao voltar para /dashboard, sem precisar
+  recarregar a página.
+
+Tooltip da linha foi trocado de
+  "Clique para alterar status (Confirmar / Reagendar /
+   Cancelar) ou editar"
+para
+  "Clique para editar a consulta ou trocar o status"
+(referência aos botões coloridos foi removida — ver
+Ajuste 3).
+
+============================================================
+2. AJUSTE 2 - "NOVO PACIENTE" CONECTADO AO SUPABASE
+============================================================
+Problema: o modal "Novo Paciente" do Dashboard salvava
+apenas em localStorage ('vitalle_mock_patients') e exibia
+no rodapé o aviso "Backend ainda nao conectado. O paciente
+e salvo apenas no navegador (mock) ate a Fase 4...". Isso
+quebrava a contagem de "Pacientes Ativos" do Dashboard e
+impedia que o paciente cadastrado aparecesse no fluxo de
+consultas.
+
+Mudanças:
+
+  frontend/src/services/patients-service.ts            [CRIADO]
+    - createPatient(payload): INSERT em public.patients
+      com tenant_id, name, cpf, phone, email,
+      date_of_birth, gender, address, is_active=true.
+    - Traduz a constraint @@unique([cpf, tenantId]) /
+      código 23505 para a mensagem
+      "Já existe um paciente cadastrado com este CPF."
+    - listPatients(tenantId, limit=50): util para futuras
+      telas de listagem / autocomplete.
+
+  frontend/src/components/dashboard/new-patient-modal.tsx [EDITADO]
+    - Removido o mock localStorage e o setTimeout fake.
+    - handleSubmit chama createPatient direto (sem
+      duplicar máscaras: salva CPF e telefone só com
+      dígitos, como o schema espera).
+    - Toast de sucesso com o nome do paciente; toast de
+      erro com a mensagem real do service em caso de
+      falha (CPF duplicado, sessão expirada, etc.).
+    - Aviso de rodapé "Backend ainda nao conectado..."
+      REMOVIDO.
+
+  frontend/src/app/(dashboard)/dashboard/page.tsx       [EDITADO]
+    - NewPatientModal agora recebe
+      onCreated={() => refresh()}, então o card
+      "Pacientes Ativos" e a estatística "+N este mês"
+      são atualizados imediatamente após cadastrar.
+
+============================================================
+3. AJUSTE 3 - REMOÇÃO DA LINHA DE ATALHOS COLORIDOS
+============================================================
+Problema: ao clicar em uma consulta na Agenda, o
+EditAppointmentModal mostrava DUAS faixas de status:
+
+  (a) Uma faixa superior com 3 botões coloridos
+      [Confirmar] [Reagendar] [Cancelar]
+      (que chamavam handleQuickStatus()).
+  (b) Um seletor logo abaixo com TODOS os status:
+      Agendado / Confirmado / Reagendado / Concluído /
+      Faltou / Cancelado (com pílula colorida quando
+      selecionado).
+
+A faixa (a) duplicava 3 das 6 opções da faixa (b),
+poluindo a interface.
+
+Mudanças em
+frontend/src/components/dashboard/edit-appointment-modal.tsx:
+
+  - Bloco "Atalhos de status" (3 botões coloridos)
+    REMOVIDO inteiro.
+  - Função handleQuickStatus() REMOVIDA (não era mais
+    chamada).
+  - Imports não utilizados (CheckCircle2, XCircle,
+    RotateCcw, cancelAppointment) REMOVIDOS.
+  - O seletor visual completo (faixa b) continua igual:
+    selecionar um status e clicar em "Salvar alterações"
+    faz o updateAppointment normalmente.
+
+Observação: a função cancelAppointment() ainda existe em
+services/appointments-service.ts para reaproveitamento
+futuro (não é mais usada pelo modal). Pode ser removida
+quando ninguém mais consumir.
+
+============================================================
+4. ARQUIVOS TOCADOS NESTA SESSÃO
+============================================================
+Frontend:
+- frontend/src/services/patients-service.ts                       [CRIADO]
+- frontend/src/components/dashboard/new-patient-modal.tsx         [editado]
+- frontend/src/components/dashboard/edit-appointment-modal.tsx    [editado]
+- frontend/src/app/(dashboard)/dashboard/page.tsx                 [editado]
+
+Histórico:
+- Histórico de desenvolvimento/Resumo Desenvolvimento
+  21_05_2026.txt                                                  [CRIADO]
+
+Banco Supabase (qakfcyurfroqjvykbdwe):
+- Nenhuma migration aplicada nesta sessão.
+- A tabela public.patients já existia (com cpf+tenant_id
+  unique e RLS habilitada + policies mvp_anon).
+
+============================================================
+5. PENDÊNCIAS (em evidência)
+============================================================
+
+>>> AINDA NÃO RESOLVIDAS NESTA SESSÃO <<<
+
+A) BACKEND NESTJS:
+   (A.1) Substituir [YOUR-DB-PASSWORD] em backend/.env
+         pela senha real do Postgres (Project Settings
+         > Database no painel do Supabase).
+   (A.2) Substituir [COLOQUE-A-SERVICE-ROLE-KEY-...] por
+         SUPABASE_SERVICE_ROLE_KEY (Project Settings >
+         API). Necessária se o backend for bypassar RLS.
+   (A.3) Trocar JWT_SECRET e JWT_REFRESH_SECRET por
+         valores gerados com `openssl rand -hex 32`.
+   (A.4) Rodar localmente:
+           cd backend
+           npm install
+           npx prisma generate
+           npx prisma migrate diff --from-empty
+             --to-schema-datamodel prisma/schema.prisma
+             --script > prisma/migrations/0_init/migration.sql
+           npx prisma migrate resolve --applied "0_init"
+   (A.5) Quando o backend NestJS estiver no ar, DROPAR
+         as policies "*_mvp_anon" do banco:
+           DROP POLICY tenants_mvp_anon  ON public.tenants;
+           DROP POLICY users_mvp_anon    ON public.users;
+           DROP POLICY doctors_mvp_anon  ON public.doctors;
+           DROP POLICY patients_mvp_anon ON public.patients;
+           DROP POLICY appointments_mvp_anon
+             ON public.appointments;
+
+B) ITENS HERDADOS DO RESUMO 20_05 QUE NÃO ENTRARAM:
+   (B.1) BUG no DashboardLayout: isLoading inicia true e
+         só vira false em setUser. Acesso direto a
+         /dashboard sem login deixa spinner travado.
+         Sugestão: usar onRehydrateStorage do zustand
+         para setar isLoading=false após o persist
+         hidratar.
+   (B.2) registerFirstUser no frontend ainda faz 3
+         inserts sem transação (risco de tenant órfão).
+         Mitigar via função PL/pgSQL ou esperar o backend
+         NestJS, que já usa $transaction.
+   (B.3) Senha do MVP frontend ainda usa SHA-256 client-
+         side (placeholder). Quando o frontend passar a
+         falar com o backend NestJS, trocar para POST
+         /auth/register e /auth/login (bcrypt salt 12
+         server-side).
+   (B.4) Função pré-existente public.rls_auto_enable()
+         continua com 2 warnings de SECURITY DEFINER
+         exposto a anon/authenticated. Decisão pendente
+         (REVOKE EXECUTE ou converter para SECURITY
+         INVOKER).
+   (B.5) prisma/migrations/ continua vazia até rodar o
+         item (A.4) acima.
+   (B.6) prisma/seed.ts ainda não existe.
+   (B.7) "TOP 10 produtos" hoje usa appointments.type
+         como proxy porque não existe tabela de Products
+         no schema. Quando o backend ganhar essa
+         entidade (preço, SKU, vínculo com Invoice/
+         Payment), trocar fetchTopProcedures em
+         dashboard-service.ts para usar a fonte
+         definitiva.
+
+C) FASES 0-6 DO PLANO ORIGINAL QUE CONTINUAM ABERTAS:
+   - Esqueci-senha; rate-limit dedicado em /auth.
+   - Webhooks PagBank/WhatsApp com validação de assinatura
+     HMAC; corrigir cross-tenant leak do WhatsAppService.
+   - Módulos Anamnesis/Evolution/Invoices vazios no
+     backend; providers reais (NFe, PagBank, WhatsApp
+     injetável).
+   - Frontend: substituir mocks restantes
+     (pacientes-list, prontuário, anamnese, evolução,
+     financeiro, whatsapp); fluxo de checkout + aceite
+     de contrato; shadcn/ui base.
+   - Cron jobs (lembrete D+1, NFe pós-APPROVED,
+     aniversariantes, recuperação 90 dias) e campanhas
+     WhatsApp em massa.
+   - Sentry, OpenTelemetry, testes (unit, integração,
+     E2E), husky+lint-staged.
+   - CI/CD (GitHub Actions), Cloud Scheduler, Secret
+     Manager, backup Postgres.
+
+D) TODO ESPECÍFICO DESTA SESSÃO:
+   (D.1) cancelAppointment() em
+         frontend/src/services/appointments-service.ts
+         ficou ÓRFÃO (não tem mais consumidor). Decidir
+         se mantemos como API utilitária ou removemos.
+   (D.2) Validar manualmente:
+           1. /dashboard -> "Novo Paciente" -> preencher
+              -> Cadastrar -> conferir aumento em
+              "Pacientes Ativos".
+           2. /agenda -> clicar em uma consulta -> trocar
+              status para "Confirmado" -> Salvar -> voltar
+              para /dashboard e conferir pílula verde
+              escura em "Consultas de Hoje".
+           3. /agenda -> clicar em consulta -> conferir
+              que NÃO existe mais a linha colorida
+              [Confirmar] [Reagendar] [Cancelar] acima
+              do form.
+
+============================================================
+FIM DO RELATÓRIO - 21/05/2026
+============================================================

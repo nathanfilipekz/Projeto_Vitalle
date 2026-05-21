@@ -1,0 +1,546 @@
+============================================================
+RESUMO DE DESENVOLVIMENTO - VITALLE
+Data: 20/05/2026
+Tipo: Dashboard + Banco Supabase + Auth single-user + Agenda
+      + Dashboard real-time + MFA TOTP + Backend NestJS
+        acoplado ao Supabase
+Autor: Assistente Claude
+Skills utilizadas:
+  - .claude/skills/tlc-spec-driven
+  - MCP oficial Supabase (autorizado pelo usuário)
+============================================================
+
+ÍNDICE
+------
+1.  Ajustes na visão de Dashboard (cards + lembretes + link)
+2.  Criação do banco de dados Supabase (15 tabelas + RLS)
+3.  Reset + policies anon (MVP single-user) e integração frontend
+4.  Dashboard ligado direto ao Supabase (estatísticas reais
+    + troca de "Pendentes" por "Canceladas" com %)
+5.  MFA TOTP (frontend + backend)
+6.  Acoplamento do backend NestJS ao Supabase
+7.  Bloqueio de agendamento sobreposto (banco + services)
+8.  Edição de agendamento + status + clique no Dashboard
+9.  Gráficos do Dashboard ligados ao Supabase
+10. Verificação / Advisors
+11. O que faltou / Próximos passos do plano
+12. Arquivos / objetos tocados nesta sessão
+
+============================================================
+1. AJUSTES NA VISÃO DE DASHBOARD (mais cedo na sessão)
+============================================================
+Arquivo: frontend/src/app/(dashboard)/dashboard/page.tsx
+  (a) "Ações Rápidas": título acentuado; botão "Nova
+      Evolução" removido (componente fica em disco para
+      eventual reuso na tela /evolucao).
+  (b) "Lembretes": "5 aniversariantes esta semana" virou
+      "5 aniversariantes do mês".
+  (c) "Consultas de Hoje": link "Ver agenda completa" agora
+      usa <Link> do next/link (navegação SPA).
+
+============================================================
+2. CRIAÇÃO DO BANCO DE DADOS SUPABASE
+============================================================
+Projeto: Data_base_vitalle_prd
+  id qakfcyurfroqjvykbdwe / us-east-2 / Postgres 17.6.
+
+Migrations aplicadas via mcp.apply_migration:
+  001_init_enums_and_utils       (10 enums + set_updated_at)
+  002_core_identity_tables       (tenants, users,
+                                  refresh_tokens, doctors,
+                                  managers)
+  003_clinical_tables            (patients, appointments,
+                                  medical_records,
+                                  patient_evolutions)
+  004_financial_tables           (subscriptions, payments,
+                                  invoices)
+  005_auxiliary_tables           (contract_acceptances,
+                                  whatsapp_messages,
+                                  audit_logs)
+  006_enable_rls_and_policies    (RLS ON em 15 tabelas +
+                                  current_tenant_id() +
+                                  15 policies tenant-iso)
+  007_advisor_fixes              (search_path travado +
+                                  índices em FKs sem
+                                  cobertura)
+
+============================================================
+3. RESET + POLICIES ANON (MVP) + INTEGRAÇÃO FRONTEND
+============================================================
+
+Migration aplicada:
+  008_reset_and_anon_policies_mvp
+       - TRUNCATE CASCADE em todas as 15 tabelas (zeradas).
+       - 5 policies temporárias "<tabela>_mvp_anon" em
+         tenants, users, doctors, patients e appointments
+         (TO anon, authenticated USING true WITH CHECK true).
+         As policies tenant-isolated continuam ativas em
+         paralelo; DROPAR as "*_mvp_anon" quando o backend
+         estiver autenticando.
+
+Cliente Supabase e validação de e-mail no frontend:
+  frontend/src/lib/supabase.ts                       [criado]
+       - createClient com NEXT_PUBLIC_SUPABASE_URL e
+         NEXT_PUBLIC_SUPABASE_ANON_KEY.
+       - EMAIL_REGEX exigindo "@" e domínio terminado em
+         ".com" (aceita ".com.br" etc.) + isValidEmail().
+  frontend/.env.local                                [atualizado]
+
+Services:
+  frontend/src/services/auth-service.ts              [criado/atualizado]
+       - hasAnyUser() bloqueia segundo cadastro.
+       - registerFirstUser() cria tenant + user + doctor.
+       - loginWithCredentials() agora devolve
+         { user, requiresMfa } (suporta MFA opcional).
+
+  frontend/src/services/appointments-service.ts      [criado]
+       - createAppointment, listAppointmentsInRange,
+         ensurePatient, resolveDoctorId.
+
+Telas atualizadas:
+  frontend/src/app/(auth)/register/page.tsx          [reescrito]
+       Bloqueia tela se já existe usuário; validação de
+       e-mail (regex + pattern); chama registerFirstUser.
+  frontend/src/app/(auth)/login/page.tsx             [reescrito]
+       Validação de e-mail; "Criar a primeira conta" quando
+       o banco está vazio; suporte ao fluxo MFA (ver §5).
+  frontend/src/components/dashboard/new-appointment-modal.tsx
+       Salva direto no Supabase via service; aceita
+       defaultDate; mock localStorage removido.
+  frontend/src/app/(dashboard)/agenda/page.tsx       [reescrito]
+       Day/Week/Month reais com startOf*/endOf* + add*
+       do date-fns; refetch ao mudar data/view; input
+       date extra para pular para qualquer dia; agrupamento
+       por dia em semana/mês; empty state; integração com
+       NewAppointmentModal usando defaultDate.
+
+============================================================
+4. DASHBOARD LIGADO DIRETO AO SUPABASE
+============================================================
+
+Service novo:
+  frontend/src/services/dashboard-service.ts         [criado]
+       - fetchDashboardData(tenantId) faz em paralelo:
+           countAppointmentsToday (hoje e ontem)
+           countAppointmentsTodayByStatus (CONFIRMED, CANCELED)
+           countActivePatients (is_active = true)
+           countPatientsCreatedSince (mês corrente)
+           listTodayAppointments (com join em patients)
+       - Calcula:
+           consultasHoje + delta vs ontem
+           pacientesAtivos + "+N este mês"
+           confirmadas + percentual sobre total do dia
+           canceladas + percentual sobre total do dia
+
+Tela:
+  frontend/src/app/(dashboard)/dashboard/page.tsx    [reescrito]
+       - 4 big numbers reais: Consultas Hoje, Pacientes
+         Ativos, Confirmadas (% verde) e CANCELADAS (%
+         vermelho) — o card "Pendentes" foi substituído
+         por "Canceladas" com ícone XCircle e fundo
+         vermelho (bg-red-400), exibindo o percentual
+         de cancelamento do dia no mesmo padrão visual
+         do card "Confirmadas".
+       - Lista "Consultas de Hoje" agora vem do Supabase,
+         com loading/empty state e formatação de horário
+         em pt-BR (date-fns).
+       - Ações Rápidas chamam refresh() ao criar consulta
+         (Dashboard reflete imediatamente).
+
+============================================================
+5. MFA TOTP (RFC 6238)
+============================================================
+
+Frontend:
+  frontend/src/lib/totp.ts                            [criado]
+       - Implementação minimalista de TOTP usando Web
+         Crypto (HMAC-SHA1). Sem dependência externa.
+       - generateSecret (20 bytes -> base32),
+         totp(secret, time?), verifyTotp(secret, code,
+         window=1), buildOtpauthUri, qrImageUrl.
+
+  frontend/src/services/mfa-service.ts                [criado]
+       - getMfaStatus, beginMfaSetup, confirmAndEnableMfa,
+         disableMfa, verifyLoginMfaCode.
+       - Persiste mfa_secret e mfa_enabled na tabela
+         users do Supabase.
+
+  frontend/src/components/dashboard/mfa-setup.tsx     [criado]
+       - Card com QR Code (api.qrserver.com), código
+         de confirmação, copy-to-clipboard do segredo,
+         botão "Ativar" e fluxo de "Desativar" com
+         confirmação por código.
+
+  frontend/src/app/(dashboard)/configuracoes/page.tsx [editado]
+       - Aba "Segurança" passa a renderizar <MfaSetupCard />
+         antes do bloco de alterar senha.
+
+  frontend/src/app/(auth)/login/page.tsx              [editado]
+       - Após validar e-mail/senha, se requiresMfa, exibe
+         tela "Verificação em duas etapas" com input de 6
+         dígitos. verifyLoginMfaCode confirma e hidrata o
+         auth-store.
+
+Backend:
+  backend/src/modules/auth/mfa.service.ts             [criado]
+       - Mesma implementação do TOTP em Node (createHmac
+         + base32), sem dependência externa.
+       - beginSetup, verifySetup, disable, verifyLoginCode.
+  backend/src/modules/auth/dto/mfa.dto.ts             [criado]
+       - MfaCodeDto com validação @Length(6,6) + @Matches.
+  backend/src/modules/auth/auth.service.ts            [editado]
+       - login(): se user.mfaEnabled, retorna
+         { requiresMfa: true, userId, email } SEM emitir
+         tokens.
+       - completeMfaLogin(userId, code, ip, ua): valida
+         TOTP e chama finalizeLogin().
+       - finalizeLogin() centraliza last_login, audit e
+         emissão de tokens.
+  backend/src/modules/auth/auth.controller.ts         [editado]
+       - @Public() em login, login/mfa, register, refresh.
+       - Novas rotas:
+           POST /api/v1/auth/login/mfa
+           POST /api/v1/auth/mfa/setup
+           POST /api/v1/auth/mfa/verify
+           POST /api/v1/auth/mfa/disable
+           GET  /api/v1/auth/mfa/status
+  backend/src/modules/auth/auth.module.ts             [editado]
+       - MfaService registrado em providers/exports.
+
+============================================================
+6. ACOPLAMENTO DO BACKEND NESTJS AO SUPABASE
+============================================================
+
+Configuração:
+  backend/.env                                       [criado]
+       DATABASE_URL apontando para o pooler do projeto
+       qakfcyurfroqjvykbdwe (porta 6543 com pgbouncer).
+       DIRECT_URL na 5432 para migrações.
+       SUPABASE_URL e SUPABASE_ANON_KEY já preenchidos.
+       PLACEHOLDERS: [YOUR-DB-PASSWORD] e
+       [COLOQUE-A-SERVICE-ROLE-KEY-DO-PAINEL-AQUI]
+       que o usuário precisa substituir pelas credenciais
+       reais do painel do Supabase (Project Settings >
+       Database / API).
+  backend/.env.example                               [atualizado]
+       Mesmo template do .env, com instruções inline.
+
+main.ts e app.module.ts:
+  backend/src/main.ts                                [reescrito]
+       - app.useGlobalFilters(new GlobalExceptionFilter())
+       - app.useGlobalInterceptors(new AuditInterceptor(prisma))
+       - app.useGlobalGuards(new JwtAuthGuard(reflector))
+         (respeita @Public() em login, register, refresh,
+          login/mfa e /health)
+       - Logger do Nest em vez de console.log.
+       - Log do endpoint /health.
+  backend/src/app.module.ts                          [editado]
+       - HealthModule importado.
+       - ThrottlerGuard registrado como APP_GUARD
+         (rate-limit agora é efetivo).
+
+Health check:
+  backend/src/modules/health/health.controller.ts    [criado]
+  backend/src/modules/health/health.module.ts        [criado]
+       GET /api/v1/health (@Public()): status + uptime +
+       ping no Postgres (SELECT 1) com latência.
+
+Frontend Docker:
+  frontend/next.config.mjs                           [editado]
+       Adicionado output: 'standalone' (necessário para
+       o Dockerfile.frontend multi-stage). Domain
+       'api.qrserver.com' adicionado para o QR do MFA.
+
+============================================================
+7. BLOQUEIO DE AGENDAMENTO SOBREPOSTO
+============================================================
+
+Regra: o mesmo profissional (doctor) não pode ter duas
+consultas cujos intervalos [date_time, date_time + duration)
+se sobreponham. Consultas em CANCELED, NO_SHOW ou soft-
+deleted são ignoradas.
+
+Migration aplicada:
+  009_no_overlap_per_doctor
+       - CREATE EXTENSION IF NOT EXISTS btree_gist.
+       - Função IMMUTABLE public.appt_range(dt, dur):
+           SELECT tstzrange(dt, dt + make_interval(mins => dur), '[)')
+       - ALTER TABLE public.appointments ADD CONSTRAINT
+         appointments_no_overlap_per_doctor EXCLUDE USING gist (
+           doctor_id WITH =,
+           public.appt_range(date_time, duration) WITH &&
+         ) WHERE (deleted_at IS NULL
+                  AND status NOT IN ('CANCELED', 'NO_SHOW'));
+       - 1 registro duplicado de teste foi removido antes
+         da criação da constraint (id terminado em 7e43).
+       - Smoke test via DO $$ ... EXCEPTION WHEN
+         exclusion_violation $$ confirmou que a inserção
+         conflitante é rejeitada.
+
+Frontend:
+  frontend/src/services/appointments-service.ts            [editado]
+       - hasOverlap(tenantId, doctorId, dateTimeIso,
+         duration): consulta candidates com date_time <
+         newEnd e verifica end > newStart no client.
+       - createAppointment: chama hasOverlap antes do
+         insert; em caso de corrida, traduz o erro
+         23P01 / "appointments_no_overlap_per_doctor"
+         para mensagem amigável em pt-BR.
+
+Backend:
+  backend/src/modules/appointments/appointments.service.ts [editado]
+       - create() substituiu o findFirst exato por
+         $queryRaw usando public.appt_range() para
+         detectar overlap; em caso de corrida, traduz
+         a exclusion_violation em BadRequestException
+         com mensagem em pt-BR.
+
+Mensagem mostrada ao usuário em qualquer dos pontos:
+  "Já existe uma consulta neste horário para este
+   profissional. Escolha outro horário ou ajuste a duração."
+
+============================================================
+8. EDIÇÃO DE AGENDAMENTO + STATUS + CLIQUE NO DASHBOARD
+============================================================
+
+Service:
+  frontend/src/services/appointments-service.ts            [editado]
+       - UpdateAppointmentPayload + updateAppointment():
+           * Aceita patientName (cria/reutiliza paciente),
+             dateTimeIso, duration, type, notes e status.
+           * Refaz a checagem de overlap (excluindo o próprio
+             id) sempre que mudar horário/duração ou voltar
+             para status ativo (SCHEDULED/CONFIRMED/
+             RESCHEDULED). Em corridas, captura 23P01.
+       - cancelAppointment(id, tenantId, doctorId): atalho.
+
+Modal:
+  frontend/src/components/dashboard/edit-appointment-modal.tsx [criado]
+       - Pré-preenche todos os campos a partir do AppointmentRow.
+       - Linha de "Atalhos de status":
+           [Confirmar]  -> CONFIRMED
+           [Reagendar]  -> RESCHEDULED
+           [Cancelar]   -> CANCELED
+         (todos chamam updateAppointment direto e fecham.)
+       - Seletor visual completo: Agendado, Confirmado,
+         Reagendado, Concluído, Faltou, Cancelado.
+       - Form principal salva paciente/data/hora/duração/tipo/
+         observações + status escolhido.
+
+Agenda (frontend/src/app/(dashboard)/agenda/page.tsx) [editado]
+       - Cada bloco de consulta virou <button> clicável.
+       - Badge de status (Confirmado / Cancelado / Reagendado
+         / Concluído / Faltou) aparece em cada card.
+       - Clique abre EditAppointmentModal; onUpdated refaz o
+         fetch da janela atual.
+
+Dashboard "Consultas de Hoje"
+  frontend/src/app/(dashboard)/dashboard/page.tsx     [editado]
+       - Cada linha da lista é <button>; abre o EditAppoint-
+         mentModal e refresh() após salvar.
+       - statusLabels já incluem CONFIRMED / SCHEDULED /
+         CANCELED / RESCHEDULED / COMPLETED / NO_SHOW e a
+         pílula colorida muda conforme o status atual.
+
+============================================================
+9. GRÁFICOS DO DASHBOARD LIGADOS AO SUPABASE
+============================================================
+
+Service:
+  frontend/src/services/dashboard-service.ts          [editado]
+       - fetchSalesByDay(tenantId, days=7):
+           * Lê public.payments (status='APPROVED', paid_at
+             nos últimos N dias) e public.appointments (não
+             CANCELED/NO_SHOW) no mesmo intervalo.
+           * Agrupa por dia (date-fns) preenchendo dias
+             vazios com 0 para o gráfico ficar contínuo.
+           * Devolve { day (rótulo curto), dateIso, vendas
+             (BRL), consultas (count) }.
+       - fetchTopProcedures(tenantId):
+           * Lê public.appointments do mês corrente
+             (status ativo), agrupa por .type no client,
+             ordena desc e retorna top 10.
+           * NOTA: como o schema não tem tabela Products,
+             usamos appointments.type como melhor proxy de
+             "produto/serviço executado". Trocável por
+             products quando o backend ganhar essa entidade.
+
+Componentes:
+  frontend/src/components/dashboard/sales-line-chart.tsx     [reescrito]
+  frontend/src/components/dashboard/top-products-chart.tsx   [reescrito]
+       - Buscam dados via useEffect com cancelamento.
+       - Estados loading / error / empty state.
+       - Mantêm o mesmo visual (recharts + paleta da marca).
+       - Subtítulos atualizados explicando a fonte real:
+           Vendas: "Últimos 7 dias · pagamentos com status APPROVED"
+           Top 10: "Ranking do mês · tipos de consulta com mais
+                    agendamentos ativos"
+
+============================================================
+10. VERIFICAÇÃO / ADVISORS
+============================================================
+
+Banco após reset: tenants=0, users=0, doctors=0, patients=0,
+appointments=0 (verificado via mcp.execute_sql).
+
+Tabelas com RLS ON: 15/15.
+
+Advisors após 007:
+  - 2 warnings remanescentes sobre public.rls_auto_enable()
+    (NÃO criada por mim; já existia no projeto).
+  - Performance: 36 "unused_index" INFO (normal em banco
+    vazio, vão sumir com o uso real).
+
+NÃO executei `npm install` / `npm run build` no backend ou
+frontend nesta sessão (ambiente do assistente não roda npm
+do projeto). Recomendado rodar localmente:
+  cd backend && npm install && npx prisma generate && npm run start:dev
+  cd frontend && npm install && npm run build
+
+============================================================
+11. O QUE FALTOU / PRÓXIMOS PASSOS
+============================================================
+
+Pré-requisitos para o backend NestJS rodar conectado:
+
+  (A) Substituir [YOUR-DB-PASSWORD] em backend/.env pela
+      senha do Postgres do projeto Supabase
+      (painel: Project Settings > Database).
+
+  (B) Substituir [COLOQUE-A-SERVICE-ROLE-KEY-DO-PAINEL-AQUI]
+      por SUPABASE_SERVICE_ROLE_KEY (painel: Project
+      Settings > API). Necessária se você quiser bypass
+      total de RLS pelo backend.
+
+  (C) Trocar JWT_SECRET e JWT_REFRESH_SECRET por valores
+      gerados com `openssl rand -hex 32`.
+
+  (D) Rodar localmente:
+        cd backend
+        npm install
+        npx prisma generate
+        npx prisma migrate diff \
+          --from-empty \
+          --to-schema-datamodel prisma/schema.prisma \
+          --script > prisma/migrations/0_init/migration.sql
+        npx prisma migrate resolve --applied "0_init"
+      Isso versiona a baseline (o banco já tem o schema;
+      essa rotina só "marca" a migration como aplicada
+      para evitar drift).
+
+  (E) Quando o backend estiver no ar, dropar as policies
+      "*_mvp_anon" do banco (migration de reversão):
+        DROP POLICY tenants_mvp_anon ON public.tenants;
+        DROP POLICY users_mvp_anon ON public.users;
+        DROP POLICY doctors_mvp_anon ON public.doctors;
+        DROP POLICY patients_mvp_anon ON public.patients;
+        DROP POLICY appointments_mvp_anon ON public.appointments;
+
+Pendências documentadas que NÃO foram tratadas nesta
+sessão:
+
+  (1) BUG no DashboardLayout: isLoading inicia true e só
+      vira false em setUser. Acesso direto a /dashboard
+      sem login deixa spinner travado. Sugestão: usar
+      onRehydrateStorage do zustand para setar
+      isLoading=false após o persist hidratar.
+
+  (2) registerFirstUser no frontend faz 3 inserts sem
+      transação (risco de tenant órfão). Pode ser
+      mitigado via função PL/pgSQL no Supabase ou
+      esperando o backend NestJS, que já usa
+      $transaction.
+
+  (3) Senha do MVP frontend ainda usa SHA-256 client-side
+      (placeholder). Quando o frontend passar a falar com
+      o backend NestJS, mudar para POST /auth/register e
+      /auth/login (bcrypt salt 12 server-side).
+
+  (4) Função pré-existente public.rls_auto_enable()
+      continua com 2 warnings de SECURITY DEFINER
+      exposto a anon/authenticated. Decisão pendente
+      (REVOKE EXECUTE ou converter para SECURITY INVOKER).
+
+  (5) prisma/migrations/ continua vazia até rodar o
+      item (D) acima.
+
+  (6) prisma/seed.ts ainda não existe.
+
+  (7) "TOP 10 produtos" hoje usa appointments.type como
+      proxy porque não existe tabela de Products no schema.
+      Quando o backend ganhar essa entidade (preço, SKU,
+      vínculo com Invoice/Payment), trocar fetchTopProcedures
+      em dashboard-service.ts para usar a fonte definitiva.
+
+  (8) Demais itens das Fases 0-6 do plano original (ver
+      "Resumo Desenvolvimento 19_05_2026.txt", seção 7):
+        - Esqueci-senha; rate-limit dedicado em /auth.
+        - Webhooks PagBank/WhatsApp com validação de
+          assinatura HMAC; cross-tenant leak do
+          WhatsAppService.
+        - Módulos Anamnesis/Evolution/Invoices vazios
+          no backend; providers reais (NFe, PagBank,
+          WhatsApp injetável).
+        - Frontend: substituir mocks restantes
+          (pacientes, prontuario, anamnese, evolucao,
+          financeiro, whatsapp); fluxo de checkout
+          + aceite de contrato; shadcn/ui base.
+        - Cron jobs (lembrete D+1, NFe pós-APPROVED,
+          aniversariantes, recuperação 90 dias),
+          campanhas WhatsApp em massa.
+        - Sentry, OpenTelemetry, testes (unit,
+          integração, E2E), husky+lint-staged.
+        - CI/CD (GitHub Actions), Cloud Scheduler,
+          Secret Manager, backup Postgres.
+
+============================================================
+12. ARQUIVOS / OBJETOS TOCADOS NESTA SESSÃO
+============================================================
+Frontend:
+- frontend/.env.local                                            [atualizado]
+- frontend/next.config.mjs                                       [editado]
+- frontend/src/lib/supabase.ts                                   [criado]
+- frontend/src/lib/totp.ts                                       [criado]
+- frontend/src/services/auth-service.ts                          [criado/editado]
+- frontend/src/services/appointments-service.ts                  [criado]
+- frontend/src/services/dashboard-service.ts                     [criado]
+- frontend/src/services/mfa-service.ts                           [criado]
+- frontend/src/components/dashboard/mfa-setup.tsx                [criado]
+- frontend/src/components/dashboard/edit-appointment-modal.tsx   [criado]
+- frontend/src/components/dashboard/sales-line-chart.tsx         [reescrito]
+- frontend/src/components/dashboard/top-products-chart.tsx       [reescrito]
+- frontend/src/components/dashboard/new-appointment-modal.tsx    [reescrito]
+- frontend/src/app/(auth)/login/page.tsx                         [reescrito]
+- frontend/src/app/(auth)/register/page.tsx                      [reescrito]
+- frontend/src/app/(dashboard)/dashboard/page.tsx                [reescrito]
+- frontend/src/app/(dashboard)/agenda/page.tsx                   [reescrito]
+- frontend/src/app/(dashboard)/configuracoes/page.tsx            [editado]
+
+Backend:
+- backend/.env                                                   [criado]
+- backend/.env.example                                           [atualizado]
+- backend/src/main.ts                                            [reescrito]
+- backend/src/app.module.ts                                      [editado]
+- backend/src/modules/health/health.controller.ts                [criado]
+- backend/src/modules/health/health.module.ts                    [criado]
+- backend/src/modules/auth/auth.controller.ts                    [editado]
+- backend/src/modules/auth/auth.service.ts                       [editado]
+- backend/src/modules/auth/auth.module.ts                        [editado]
+- backend/src/modules/auth/mfa.service.ts                        [criado]
+- backend/src/modules/auth/dto/mfa.dto.ts                        [criado]
+- backend/src/modules/appointments/appointments.service.ts       [editado]
+
+Histórico:
+- Histórico de desenvolvimento/Resumo Desenvolvimento
+  20_05_2026.txt                                                 [atualizado]
+
+Banco Supabase (qakfcyurfroqjvykbdwe):
+- 15 tabelas (RLS ON), 10 enums, 15 policies tenant-iso,
+  5 policies "*_mvp_anon", 3 funções utilitárias
+  (set_updated_at, current_tenant_id, appt_range),
+  1 EXCLUDE constraint (appointments_no_overlap_per_doctor),
+  9 migrations registradas (001 a 009).
+
+============================================================
+FIM DO RELATÓRIO - 20/05/2026
+============================================================

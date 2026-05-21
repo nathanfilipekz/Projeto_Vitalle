@@ -1,0 +1,8 @@
+# Regras do Projeto
+
+- Nunca remover funcionalidades existentes
+- Sempre usar TypeScript
+- Não alterar schema sem migration
+- Sempre criar logs
+- Multiempresa obrigatório
+- Seguir padrão clean architecture

@@ -1,0 +1,91 @@
+version: '3.8'
+
+services:
+  # PostgreSQL Database
+  postgres:
+    image: postgres:16-alpine
+    container_name: vitalle-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-vitalle}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-vitalle_secret}
+      POSTGRES_DB: ${POSTGRES_DB:-vitalle}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U vitalle"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Redis (for future queues/caching)
+  redis:
+    image: redis:7-alpine
+    container_name: vitalle-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Backend API
+  backend:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.backend
+    container_name: vitalle-backend
+    restart: unless-stopped
+    ports:
+      - "3001:3001"
+    environment:
+      NODE_ENV: production
+      PORT: 3001
+      DATABASE_URL: postgresql://${POSTGRES_USER:-vitalle}:${POSTGRES_PASSWORD:-vitalle_secret}@postgres:5432/${POSTGRES_DB:-vitalle}?schema=public
+      JWT_SECRET: ${JWT_SECRET:-your-jwt-secret-change-in-production}
+      JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET:-your-refresh-secret-change-in-production}
+      JWT_EXPIRATION: 15m
+      JWT_REFRESH_EXPIRATION: 7d
+      SUPABASE_URL: ${SUPABASE_URL}
+      SUPABASE_SERVICE_ROLE_KEY: ${SUPABASE_SERVICE_ROLE_KEY}
+      WHATSAPP_API_URL: ${WHATSAPP_API_URL}
+      WHATSAPP_PHONE_NUMBER_ID: ${WHATSAPP_PHONE_NUMBER_ID}
+      WHATSAPP_ACCESS_TOKEN: ${WHATSAPP_ACCESS_TOKEN}
+      WHATSAPP_VERIFY_TOKEN: ${WHATSAPP_VERIFY_TOKEN}
+      PAGBANK_API_URL: ${PAGBANK_API_URL}
+      PAGBANK_TOKEN: ${PAGBANK_TOKEN}
+      NFE_API_URL: ${NFE_API_URL}
+      NFE_API_KEY: ${NFE_API_KEY}
+      FRONTEND_URL: http://localhost:3000
+      THROTTLE_TTL: 60
+      THROTTLE_LIMIT: 100
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  # Frontend
+  frontend:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.frontend
+    container_name: vitalle-frontend
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      NEXT_PUBLIC_API_URL: http://backend:3001
+      NEXT_PUBLIC_APP_NAME: Vitalle
+    depends_on:
+      - backend
+
+volumes:
+  postgres_data:
+  redis_data:

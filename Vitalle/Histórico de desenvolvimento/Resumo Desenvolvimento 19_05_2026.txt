@@ -1,0 +1,648 @@
+============================================================
+RESUMO DE DESENVOLVIMENTO - VITALLE
+Data: 19/05/2026
+Tipo: Análise estrutural + Plano de finalização
+Autor: Assistente Claude (análise sem alteração de código)
+============================================================
+
+OBSERVAÇÃO IMPORTANTE
+---------------------
+Este documento é uma ANÁLISE. NENHUM código foi alterado.
+Nenhum arquivo do backend, frontend, docker, prisma ou docs
+foi tocado. Esta sessão se limitou a inspecionar o repositório
+em C:\Projeto Git\projetoSaaS\Vitalle e gerar o presente
+relatório com mapeamento detalhado e plano de finalização.
+
+============================================================
+1. ARQUITETURA UTILIZADA
+============================================================
+
+Stack identificada:
+- Backend: NestJS 10 (TypeScript), Prisma 5, PostgreSQL, JWT
+  (passport-jwt), bcryptjs, class-validator, Swagger, Helmet,
+  ThrottlerModule, ScheduleModule, axios (WhatsApp).
+- Frontend: Next.js 14 (App Router), React 18, TypeScript,
+  TailwindCSS, Zustand (com persist), TanStack React Query,
+  Axios, react-hook-form + zod (instalados, ainda não usados),
+  Radix UI (instalado, mas pasta components/ui vazia),
+  lucide-react, sonner, date-fns, recharts.
+- Banco de dados: PostgreSQL (com intenção de usar Supabase +
+  RLS conforme docs/RLS.md). Multi-tenant via discriminator
+  "tenant_id".
+- Infra: docker-compose (prod e dev), Dockerfiles multi-stage,
+  documentação para GCP Cloud Run e VPS.
+
+Padrão Clean Architecture parcial: Controller -> Service ->
+Prisma. Camada de repositório explícita não existe (services
+falam diretamente com PrismaService).
+
+============================================================
+2. FUNCIONALIDADES JÁ IMPLEMENTADAS
+============================================================
+
+BACKEND (funcionais):
+- Bootstrap (main.ts): Helmet, compression, CORS limitado ao
+  FRONTEND_URL, ValidationPipe global (whitelist + transform),
+  prefixo /api/v1 e Swagger em /api/docs.
+- AuthModule: login, register, refresh, logout. JWT + refresh
+  token (UUID em DB) com rotação. Bcrypt salt rounds = 12.
+  Audit de LOGIN no AuthService. Multi-tenant criado no
+  register em $transaction (Tenant + User + Doctor +
+  Subscription PENDING_PAYMENT).
+- TenantsModule: GET /current, GET (somente SUPPORT),
+  PATCH /current (DOCTOR).
+- UsersModule: GET /users (paginado), GET /users/me.
+- DoctorsModule: GET /doctors, GET /doctors/:id/slots
+  (cálculo de slots livres por dia, considerando duração,
+  janela e workingDays).
+- PatientsModule: CRUD completo (POST/GET/GET:id/PATCH/DELETE
+  soft) com paginação e busca por name/cpf/phone/email.
+- AppointmentsModule: criar (com checagem básica de conflito
+  por dateTime exato), listar com filtros (doctorId/date/
+  status), updateStatus, cancel.
+- MedicalRecordsModule: POST, GET por paciente, GET por id.
+- SubscriptionsModule: GET /current.
+- PaymentsModule: GET /payments, POST /webhook/pagbank
+  (público) - atualiza status e ativa subscription para
+  PENDING_CONTRACT_ACCEPT quando APPROVED.
+- WhatsAppModule: POST /send, GET /webhook (verificação
+  hub.challenge), POST /webhook (recebimento). Automação de
+  confirmação/cancelamento via "1" / "2" / palavras-chave.
+- ContractsModule: conteúdo do contrato versionado em código,
+  GET /current, GET /status, POST /accept (gera SHA-256,
+  registra IP/userAgent/data, ativa subscription).
+- Common: Guards (JwtAuth, Roles, Tenant), Decorators
+  (CurrentUser, Public, Roles), GlobalExceptionFilter
+  (definido), AuditInterceptor (definido).
+- Prisma schema com 14 tabelas + 9 enums, soft delete em
+  quase todas, índices e unique compostos por tenant_id.
+
+FRONTEND (somente UI, com dados mock):
+- Landing page (/) com hero, features, planos R$197/R$397,
+  rodapé.
+- Layout de autenticação split-panel (verde escuro + bege).
+- Login e Register (UI completa, validação visual).
+- Layout do dashboard protegido por auth-store, com Sidebar
+  e Header.
+- Páginas /dashboard, /agenda, /pacientes, /prontuario,
+  /anamnese, /evolucao, /whatsapp, /financeiro,
+  /configuracoes (todas com mocks).
+- auth-store (Zustand + persist) e api.ts (Axios com
+  interceptor de refresh em 401).
+- Tailwind configurado com paleta da marca (#406B5B,
+  #91AE9E, #B89D83, #E4D5C3).
+
+INFRAESTRUTURA / DOCS:
+- docker-compose.yml (Postgres 16, Redis 7, backend, frontend
+  com healthchecks).
+- docker-compose.dev.yml (Postgres + Redis para dev local).
+- Dockerfile.backend (3 stages: deps -> builder ->
+  runner com usuário não-root, prisma generate).
+- Dockerfile.frontend (3 stages, espera .next/standalone).
+- docs/ARCHITECTURE.md, API.md, DEPLOY.md, RLS.md preenchidos.
+- .env.example raiz e backend/.env.example.
+
+============================================================
+3. FUNCIONALIDADES PENDENTES (GAP DE IMPLEMENTAÇÃO)
+============================================================
+
+BACKEND - MÓDULOS VAZIOS (declarados, mas sem controller/
+service):
+- modules/anamnesis/anamnesis.module.ts: apenas placeholder.
+  NÃO há modelo "Anamnesis" no schema.prisma (precisa criar
+  modelo dedicado OU usar parte do MedicalRecord). UI da
+  /anamnese existe no front mas backend NÃO atende.
+- modules/evolution/evolution.module.ts: placeholder.
+  Modelo PatientEvolution existe no schema, mas não há rotas/
+  service para criar, listar e anexar imagens.
+- modules/invoices/invoices.module.ts: placeholder. Modelo
+  Invoice existe, mas sem rotas. Sem integração real com
+  provedor de NFe (a pasta providers/nfe está VAZIA, mesmo
+  com chaves NFE_API_* no .env).
+
+BACKEND - PASTAS DECLARADAS, MAS VAZIAS:
+- src/providers/nfe/, pagbank/, supabase/, whatsapp/
+  (todos os "providers" externos citados na arquitetura
+  estão ausentes - a integração WhatsApp foi feita
+  diretamente dentro do service do módulo; PagBank apenas
+  consome webhook; NFe e Supabase nao tem nada).
+- src/common/middlewares/, src/common/pipes/, src/config/
+  (vazios).
+- prisma/migrations/ está VAZIO (não há migration inicial
+  gerada - rodar `prisma migrate dev --name init` em algum
+  momento é mandatório antes do deploy).
+- prisma/seed.ts: o script "prisma:seed" referencia esse
+  arquivo, mas ele NÃO existe.
+
+BACKEND - FUNCIONALIDADES AUSENTES:
+- Esqueci-minha-senha / Reset de senha (totalmente ausente
+  no AuthService - sem rota, sem token, sem e-mail).
+- MFA: campos mfaEnabled e mfaSecret existem no User mas
+  NÃO há rota para habilitar, gerar QR (otplib), validar
+  TOTP no login.
+- Upload de arquivos: nenhum endpoint para
+  uploadar avatares, anexos de prontuário ou imagens de
+  evolução. Os arrays "attachments" e "images" existem no
+  schema mas não há rota.
+- Cron jobs (lembrete D+1 WhatsApp e verificação de
+  subscriptions expiradas): o DEPLOY.md cita endpoints
+  /whatsapp/cron/reminders e /subscriptions/cron/check-expired
+  mas NÃO ESTÃO IMPLEMENTADOS no código (apesar do
+  ScheduleModule estar importado).
+- Aniversariantes (citado no plano Standard): sem endpoint.
+- Reativacao de pacientes 90 dias (citado no plano Plus):
+  sem endpoint.
+- Campanhas WhatsApp em massa: sem endpoint.
+- Histórico de WhatsApp paginado e por paciente: sem
+  endpoint.
+- Doctors CRUD completo: existe apenas GET; faltam POST,
+  PATCH, DELETE para adicionar/desativar médicos pela
+  Manager.
+- Managers: tabela existe, mas não há módulo dedicado para
+  criar managers.
+- Subscriptions: faltam endpoints de upgrade/downgrade,
+  cancelamento, mudança de ciclo, criação manual de cobrança.
+- Payments: falta criação de cobrança (gerar Pix / link de
+  cartão via PagBank) - hoje só recebe webhook.
+- NFe: emissão automática após APPROVED não implementada.
+- Audit logs: módulo de leitura para SUPPORT não existe.
+- Health-check público (/health) não existe (importante
+  para Cloud Run e Nginx).
+
+BACKEND - REGISTRO GLOBAL FALTANDO:
+- GlobalExceptionFilter está definido mas NÃO é registrado
+  em main.ts (app.useGlobalFilters(...)). Atualmente
+  exceções genéricas vazam o stack do Nest padrão.
+- AuditInterceptor está definido mas NÃO é registrado
+  globalmente (não está em app.module nem em main.ts).
+- ThrottlerGuard não está em APP_GUARD - logo o
+  ThrottlerModule não estrangula nada efetivamente.
+- JwtAuthGuard não é APP_GUARD global; isso obriga cada
+  controller a colocar @UseGuards e fica facil esquecer.
+
+FRONTEND - GAPS MAIS CRÍTICOS:
+- TODAS as páginas do dashboard usam mocks. Nenhuma chama
+  api.ts. Login e Register exibem TODO: "Replace with
+  actual API call".
+- Pastas vazias e que precisam ser preenchidas:
+  components/ui, components/agenda, anamnese, dashboard,
+  pacientes, prontuario, hooks, services, validators.
+  Apesar de Radix UI, react-hook-form e Zod estarem
+  instalados, nenhum componente shadcn/ui foi criado.
+- Sem hooks de queries (ex.: usePatients, useAppointments
+  com TanStack React Query, apesar do QueryProvider).
+- Sem schemas Zod e nenhum form do react-hook-form de fato
+  conectado.
+- Sem páginas de detalhe (/pacientes/[id], /prontuario/[id],
+  /agenda/[id]) e sem modais de criação.
+- Sem upload de arquivos no front.
+- Sem tela de aceite de contrato (após login se subscription
+  estiver em PENDING_CONTRACT_ACCEPT - bloqueio obrigatório
+  pela regra de negócio).
+- Sem tela de checkout (PagBank): após register a
+  subscription fica PENDING_PAYMENT e o app não conduz o
+  usuário ao pagamento.
+- Sem tela de "esqueci a senha".
+- Sem MFA UI.
+- Sem aniversariantes, recuperação 90 dias, campanhas
+  WhatsApp (apenas mock visual).
+- Sem proteção de rota baseada em subscription/contract.
+- Sem .env.local real (apenas .env.local.example).
+- Frontend Dockerfile espera `.next/standalone`, mas
+  next.config.mjs NÃO declara `output: 'standalone'`.
+  O build do container vai falhar.
+
+INFRA / DEVOPS / SEGURANÇA:
+- README.md praticamente vazio ("projetoSaaS / teste").
+- Sem CI (.github/workflows ausente).
+- Sem migration inicial Prisma criada e versionada.
+- Sem seed.
+- Sem healthcheck no backend (importante para Cloud Run e
+  Nginx).
+- Sem logging estruturado (recomendado: pino ou nestjs-pino).
+- Sem monitoramento/erros (Sentry, OpenTelemetry).
+- RLS documentado, mas como não há migration, NENHUMA
+  policy foi aplicada de fato no banco.
+
+============================================================
+4. POSSÍVEIS BUGS E PROBLEMAS DE QUALIDADE
+============================================================
+
+CRÍTICOS (segurança / correção):
+- payments.service.processWebhook: NÃO valida assinatura
+  do PagBank. Qualquer um pode chamar POST /payments/webhook/
+  pagbank e marcar pagamentos como APPROVED -> ativar
+  assinatura. Bug de segurança grave.
+- whatsapp.controller.handleWebhook: NÃO valida assinatura
+  X-Hub-Signature-256 da Meta. Risco de spoofing.
+- whatsapp.service.processInboundMessage e
+  confirmNextAppointment: a busca por patient.findFirst usa
+  apenas {phone contains ...} sem filtrar tenantId, ou seja,
+  se dois tenants tiverem pacientes com o mesmo telefone
+  pode confirmar a consulta do tenant errado. Vazamento
+  cross-tenant.
+- auth.service.register: o findFirst de usuário existente
+  usa apenas {email}, mas o unique do schema é
+  (email, tenantId). Isso impede dois tenants de
+  compartilharem e-mail (regra de negócio inconsistente -
+  precisa decidir: e-mail global ou por tenant).
+- auth.controller.logout: rota declarada como POST /logout
+  mas NÃO está sob JwtAuthGuard. Qualquer um com o
+  refreshToken consegue chamar (não é fim do mundo porque
+  precisa do token, mas o swagger e a doc dizem "Yes" para
+  Auth - inconsistência).
+- AuditInterceptor não é registrado globalmente; a maioria
+  das mutations não está sendo auditada (apesar do
+  Claude.md.txt dizer "Sempre criar logs").
+- GlobalExceptionFilter não é aplicado em main.ts.
+- ThrottlerModule sem APP_GUARD: rate-limit configurado
+  mas inefetivo. Login fica vulnerável a brute-force.
+- Sem RLS aplicado (não há migration), portanto a
+  "double protection" da arquitetura hoje é só camada de
+  aplicação.
+
+ALTOS (consistência / lógica):
+- appointments.service.create: o conflict check só compara
+  dateTime exato. Não detecta sobreposição (ex.: consulta
+  de 60 min iniciando às 09:00 conflita com slot 09:30,
+  mas o sistema permite).
+- appointments.service.cancel: recebe "reason" mas NÃO
+  persiste. Apenas delega para updateStatus(... 'CANCELED').
+  O campo cancelReason no schema nunca é preenchido.
+- patients DTO valida CPF apenas por MinLength(11), sem
+  formato ou dígito verificador.
+- date strings (dateOfBirth, etc.) vêm como string sem
+  IsDateString - validação fraca.
+- JwtStrategy não checa a versão/expiração do tenant
+  (tenant pode estar com deletedAt mas o token continua
+  válido até 15min).
+- subscriptions.service.acceptContract existe (legado) e o
+  ContractsService.acceptContract também ativa a
+  subscription. Há lógica duplicada e potencialmente
+  divergente.
+- Anamnesis no schema: NÃO existe modelo separado. UI
+  do front trata anamnese como entidade independente, mas
+  backend mistura com MedicalRecord.
+
+MÉDIOS (qualidade / DX):
+- DashboardLayout do front faz redirect a /login com base
+  em isAuthenticated vindo do persist, mas a flag isLoading
+  começa em true e nunca volta a false em fluxo real
+  (só setUser zera). Pode haver flicker / loop.
+- Login do front gera um usuário fake e empurra para
+  /dashboard sem token - quebra qualquer chamada futura à API.
+- next.config.mjs sem `output: 'standalone'` quebra o
+  Dockerfile do frontend (multi-stage espera
+  .next/standalone/server.js).
+- Falta arquivo prisma/seed.ts referenciado em package.json.
+- Sem testes (jest configurado, mas sem nenhum .spec.ts).
+- README.md inutil.
+
+BAIXOS (cosméticos / pequenos):
+- Header do dashboard ignora "subtitle" em alguns lugares.
+- "Lembrar-me" no login não está conectado a nada.
+- Footer do landing tem "&copy; 2024" hard-coded.
+- Logs com console.log em vez de Logger do Nest em
+  alguns serviços.
+
+============================================================
+5. PONTOS CRÍTICOS DE ATENÇÃO
+============================================================
+
+a) Multi-tenant: o discriminator está aplicado nas tabelas,
+   mas faltam aplicar RLS e revisar TODOS os finds para
+   garantir o filtro de tenantId. O caso do WhatsApp já
+   prova que dá pra escapar do isolamento.
+
+b) Webhooks públicos: PagBank e WhatsApp precisam validar
+   assinatura antes de mutar dados. Hoje é exploit aberto.
+
+c) Migrações Prisma: o repositório não tem nenhuma
+   migration, então qualquer deploy depende de
+   `prisma migrate dev` na hora - inaceitável em produção.
+   Antes de qualquer deploy real, gerar a migration inicial
+   e versionar.
+
+d) Frontend desacoplado: a UI está pronta mas vive de mocks.
+   Sem integração, o produto não existe. A camada
+   services/ e hooks/ precisa ser criada do zero.
+
+e) Fluxo de onboarding (register -> checkout -> aceite
+   contrato -> liberar app): existe no backend de forma
+   parcial mas o frontend NÃO conduz o usuário por ele.
+   Hoje, após register, o app jogaria o usuário no
+   dashboard sem ter pago.
+
+f) Compliance / LGPD: dados sensíveis (anamnese, prontuário,
+   CPF) não são criptografados em repouso na aplicação.
+   Confiar só no PostgreSQL TLS pode não ser suficiente.
+
+g) Build do container do frontend está quebrado pela
+   ausência de `output: 'standalone'` no next.config.mjs.
+
+============================================================
+6. DEPENDÊNCIAS PRINCIPAIS
+============================================================
+
+Backend (produção):
+- @nestjs/common, @nestjs/core, @nestjs/platform-express
+  10.3.7
+- @nestjs/config, @nestjs/jwt, @nestjs/passport,
+  @nestjs/swagger, @nestjs/throttler, @nestjs/schedule
+- @prisma/client 5.12.1 (Prisma 5.12.1 dev)
+- passport, passport-jwt
+- bcryptjs 2.4.3 (NÃO bcrypt nativo)
+- class-validator 0.14.1, class-transformer 0.5.1
+- helmet 7.1.0, compression 1.7.4, express-rate-limit 7.2.0
+  (rate-limit instalado mas não usado)
+- @supabase/supabase-js 2.42.0 (instalado mas pasta
+  providers/supabase/ está vazia)
+- swagger-ui-express
+- date-fns 3.6.0, uuid 9.0.1
+
+Backend (dev): jest 29, ts-jest, @nestjs/testing, prettier,
+eslint, ts-node, prisma, typescript 5.4.3.
+
+Frontend (produção):
+- next 14.2, react 18.3, typescript 5.4.3
+- @tanstack/react-query 5.28, axios 1.6.8, zustand 4.5.2
+- react-hook-form 7.51 + @hookform/resolvers 3.3.4, zod 3.22
+  (instalados mas ainda não usados)
+- @radix-ui/* (avatar, checkbox, dialog, dropdown, label,
+  popover, scroll-area, select, separator, slot, switch,
+  tabs, toast, tooltip)
+- tailwindcss 3.4 + tailwind-merge + tailwindcss-animate +
+  class-variance-authority + clsx
+- lucide-react 0.359, sonner 1.4 (toasts), date-fns 3.6,
+  recharts 2.12, react-day-picker 8.10
+- next-themes 0.3 (instalado mas dark mode não usado)
+- @supabase/supabase-js 2.42 (instalado mas não usado)
+
+============================================================
+7. PLANO DETALHADO DE FINALIZAÇÃO
+============================================================
+
+O plano abaixo é incremental e pensado para "fechar" o
+SaaS até MVP comercial. Está organizado em fases de risco/
+prioridade. Nenhum item foi executado ainda - este
+documento é só o roteiro.
+
+FASE 0 - Higiene e fundamentos (antes de qualquer feature)
+-----------------------------------------------------------
+0.1. Preencher README.md de verdade (como rodar local, como
+     subir docker, como rodar migrations, variáveis de
+     ambiente).
+0.2. Gerar migration Prisma inicial: `npx prisma migrate
+     dev --name init` e commitar o conteúdo de
+     prisma/migrations/.
+0.3. Criar prisma/seed.ts mínimo (1 tenant + 1 doctor +
+     2 pacientes + 3 appointments) para QA local.
+0.4. Corrigir next.config.mjs adicionando
+     `output: 'standalone'` para o Dockerfile.frontend
+     funcionar.
+0.5. Registrar globalmente em main.ts (ou app.module via
+     APP_FILTER, APP_INTERCEPTOR, APP_GUARD):
+     - GlobalExceptionFilter
+     - AuditInterceptor
+     - ThrottlerGuard
+     - JwtAuthGuard (com decorator @Public()
+       já existente para rotas livres)
+0.6. Criar rota pública GET /health para Cloud Run/Nginx.
+0.7. Adicionar logger estruturado (nestjs-pino) e plugar nos
+     fluxos críticos (login, webhook, cron).
+0.8. Aplicar rate-limit dedicado em /auth/login e /auth/
+     register (5 req/min por IP).
+
+FASE 1 - Segurança crítica
+--------------------------
+1.1. Validar assinatura HMAC do webhook PagBank
+     (PAGBANK_WEBHOOK_SECRET já existe no .env). Rejeitar
+     201 silencioso quando não confere.
+1.2. Validar X-Hub-Signature-256 da Meta no webhook do
+     WhatsApp.
+1.3. Corrigir whatsapp.service.processInboundMessage para
+     SEMPRE filtrar por tenantId (cross-tenant leak).
+1.4. Adicionar JwtAuthGuard em /auth/logout.
+1.5. Decidir e padronizar a regra de unicidade do email:
+     global (alterar schema removendo @@unique([email,
+     tenantId]) e adicionando @unique simples) OU por
+     tenant (corrigir auth.service.register para usar
+     findFirst com tenantId quando aplicável).
+1.6. Em jwt.strategy: também checar tenant.isActive e
+     tenant.deletedAt antes de aceitar.
+1.7. Aplicar RLS no Supabase/Postgres conforme docs/RLS.md
+     (rodar SQL em migration manual). Configurar
+     `SET app.current_tenant_id` no PrismaService via
+     middleware/extension - opcional caso só use service
+     role.
+1.8. Avaliar criptografia de campos sensíveis (CPF,
+     anamnese, prontuário) - no mínimo pgcrypto ou
+     coluna-by-coluna em service.
+
+FASE 2 - Backend: completar módulos vazios
+------------------------------------------
+2.1. Criar modelo Prisma `Anamnesis` (campos: tenantId,
+     patientId, doctorId, queixa, antecedentes pessoais,
+     antecedentes familiares, hábitos, medicamentos em uso,
+     alergias, observacoes, attachments[]; com soft delete).
+     Migration nova.
+2.2. Implementar AnamnesisModule (controller + service +
+     DTOs): POST, GET por paciente, GET por id, PATCH,
+     DELETE.
+2.3. Implementar EvolutionModule sobre PatientEvolution:
+     POST, GET por paciente, GET por id, PATCH, DELETE,
+     POST /:id/images (upload).
+2.4. Implementar InvoicesModule: listar por tenant, baixar
+     PDF/XML, status. Integrar com provider NFe (ver 2.5).
+2.5. Implementar provider externo realmente em
+     src/providers/:
+     - pagbank/PagBankProvider (criar Pix, criar cobrança
+       cartão, consultar charge).
+     - nfe/NfeProvider (emitir NFSe após pagamento APPROVED
+       - chamar nfe.io ou similar).
+     - whatsapp/ - extrair as chamadas HTTP do WhatsAppService
+       para um provider injetável, deixando o service só com
+       lógica de negócio (facilita teste/mock).
+     - supabase/ - se for usar Storage para anexos, criar
+       client.
+2.6. Implementar upload (anexos prontuário, evolução,
+     avatar): usar @nestjs/platform-express com Multer
+     memoryStorage + envio para Supabase Storage; retornar
+     URL pública/assinada e gravar nos arrays "attachments"
+     /"images".
+2.7. CRUD de Doctors (criar / desativar) - apenas MANAGER/
+     SUPPORT.
+2.8. ManagersModule mínimo (criar manager por tenant).
+2.9. AuditLogsModule - rota GET /audit-logs paginada para
+     SUPPORT (debug e LGPD-evidência).
+
+FASE 3 - Backend: features de negócio
+-------------------------------------
+3.1. Esqueci-senha: rotas POST /auth/forgot-password
+     (gera token, envia e-mail) e POST /auth/reset-password
+     (consome token). Tabela `password_reset_tokens` ou
+     reaproveitar refresh_tokens com flag.
+3.2. MFA: POST /auth/mfa/setup (gera secret + qrcode TOTP),
+     POST /auth/mfa/verify (ativar), checagem no /auth/login
+     quando mfaEnabled = true.
+3.3. Subscriptions: upgrade/downgrade, cancelar, mudar
+     ciclo. Disparar cobrança no PagBank quando aplicável.
+3.4. Payments: POST /payments (criar cobrança Pix ou cartão
+     no PagBank antes do webhook); reutilizar para renovações.
+3.5. Cron jobs reais com @Cron de @nestjs/schedule:
+     - lembrete D+1 WhatsApp (todo dia 18h - varre
+       appointments do dia seguinte com status SCHEDULED).
+     - check de subscriptions expiradas / SUSPENDED.
+     - emissão automática de NFe após pagamento APPROVED.
+     - rotina diária de "aniversariantes" e "pacientes sem
+       retorno há 90 dias" gerando uma fila/queue para o
+       front exibir.
+3.6. Campanhas WhatsApp: tabela `whatsapp_campaigns`,
+     endpoints para criar, agendar e disparar (com rate
+     limit por WABA).
+3.7. Corrigir lógica do appointments.service.create para
+     detectar sobreposição (intervalo [dateTime,
+     dateTime+duration)).
+3.8. Persistir cancelReason em cancel().
+
+FASE 4 - Frontend: integração com a API
+---------------------------------------
+4.1. Criar src/services/* (um arquivo por módulo do
+     backend) com funções tipadas (login, register,
+     listPatients, etc.) sobre o axios já configurado.
+4.2. Criar src/validators/* com schemas Zod (login,
+     register, patient, appointment, anamnesis, evolution,
+     medicalRecord).
+4.3. Criar src/hooks/* (useLogin, useRegister, usePatients,
+     useAppointments, useDoctors, etc.) com TanStack React
+     Query usando os services. Centralizar invalidations.
+4.4. Conectar /login real - chamar POST /api/v1/auth/login,
+     salvar tokens no localStorage, hidratar auth-store via
+     /users/me.
+4.5. Conectar /register real - chamar POST /api/v1/auth/
+     register, redirecionar para fluxo de checkout (4.10).
+4.6. Substituir todos os mocks de /agenda, /pacientes,
+     /prontuario, /anamnese, /evolucao, /financeiro,
+     /whatsapp, /dashboard, /configuracoes por chamadas
+     reais.
+4.7. Criar componentes shadcn/ui base em
+     src/components/ui (button, input, label, dialog,
+     dropdown, popover, select, switch, tabs, toast,
+     tooltip, scroll-area, separator, badge, card,
+     skeleton).
+4.8. Criar páginas de detalhe e formulários (modais ou
+     páginas): pacientes/[id], agenda/novo, agenda/[id],
+     prontuario/novo, prontuario/[id], evolucao/novo,
+     anamnese/nova.
+4.9. Implementar upload no front (avatar do doctor,
+     anexos de prontuário e evolução) usando o endpoint da
+     fase 2.6.
+4.10. Fluxo de checkout/onboarding:
+      - após register, exibir tela "Plano X - R$ 197"
+        e botões PIX/Cartão -> chamar POST /payments.
+      - aguardar status APPROVED (polling ou Pusher
+        opcional) ou retorno do PagBank.
+      - depois, exibir tela "Aceite do Contrato" com
+        conteúdo de GET /contracts/current.
+      - POST /contracts/accept -> liberar /dashboard.
+      - middleware no frontend que bloqueia /dashboard
+        enquanto subscription != ACTIVE ou contract não
+        aceito.
+4.11. Tela "Esqueci a senha" + "Redefinir senha".
+4.12. Tela de MFA opt-in em /configuracoes.
+4.13. Telas Plus: aniversariantes, recuperação 90 dias,
+      campanhas WhatsApp.
+4.14. Substituir uso de window.location em api.ts por
+      router do Next, e padronizar nome das chaves do
+      localStorage (vitalle_token e vitalle_refresh_token
+      já são consistentes - manter).
+
+FASE 5 - Qualidade, testes e observabilidade
+--------------------------------------------
+5.1. Testes unitários (jest) para services do backend
+     (auth, patients, appointments, doctors slots,
+     contracts hash).
+5.2. Testes de integração (supertest) para auth flow
+     completo, multi-tenant, webhook PagBank, webhook
+     WhatsApp.
+5.3. Testes E2E mínimos do frontend (Playwright) para
+     fluxo: register -> checkout -> contrato -> dashboard.
+5.4. Sentry no frontend e no backend.
+5.5. OpenTelemetry no backend (tracing das requisições e
+     prisma).
+5.6. ESLint + Prettier rodando em pre-commit (husky +
+     lint-staged).
+
+FASE 6 - Deploy e DevOps
+------------------------
+6.1. Workflow CI no GitHub Actions:
+     - lint + typecheck.
+     - prisma migrate diff.
+     - testes.
+     - build docker.
+     - push para gcr.io ou GHCR.
+6.2. Workflow CD para Cloud Run (já documentado em
+     DEPLOY.md).
+6.3. Cloud Scheduler dos cron jobs (já documentado).
+6.4. Secret Manager para todas as chaves sensíveis.
+6.5. Domínio + SSL (Let's Encrypt no Nginx ou
+     load balancer do GCP).
+6.6. Healthchecks (/health) plugados no Cloud Run.
+6.7. Backup automatizado do Postgres.
+
+============================================================
+8. PRIORIZAÇÃO RECOMENDADA (ordem sugerida)
+============================================================
+
+Sprint 1 (2 semanas): Fase 0 + Fase 1 (fundamentos +
+segurança crítica). Sem isso o produto não pode rodar
+em produção real.
+
+Sprint 2 (2 semanas): Fase 2 (módulos vazios + providers +
+upload). Sem isso o backend não cobre a UI já existente.
+
+Sprint 3 (2 semanas): Fase 4 (integração front->API + fluxo
+de onboarding/checkout/contrato). É aqui que o SaaS começa
+a "existir" para o cliente.
+
+Sprint 4 (1-2 semanas): Fase 3 (cron jobs, reset senha,
+MFA, NFe, campanhas) - tudo o que aparece nos planos
+Standard/Plus.
+
+Sprint 5 (1 semana): Fase 5 (testes + observabilidade).
+
+Sprint 6 (1 semana): Fase 6 (CI/CD + deploy).
+
+============================================================
+9. O QUE FOI FEITO NESTA SESSÃO (19/05/2026)
+============================================================
+
+FEITO:
+- Análise completa da estrutura do repositório.
+- Mapeamento de funcionalidades implementadas e
+  pendentes em backend, frontend e infraestrutura.
+- Identificação de pontos críticos e bugs (lista acima).
+- Levantamento de dependências.
+- Plano de finalização em 6 fases.
+- Criação deste arquivo:
+  Histórico de desenvolvimento\Resumo Desenvolvimento
+  19_05_2026.txt.
+
+NÃO FEITO (proposital - nenhuma alteração de código):
+- Nenhum arquivo de backend/, frontend/, prisma/, docker/
+  ou docs/ foi modificado.
+- Nenhuma migration foi gerada.
+- Nenhum bug foi corrigido (apenas documentado).
+- Nenhum módulo vazio foi preenchido.
+- Nenhuma dependência foi instalada/atualizada.
+
+PRÓXIMO PASSO SUGERIDO:
+Aguardar aprovação do plano. Em seguida iniciar pela Fase 0
+(higiene + fundamentos), pois é a única que destrava todo
+o restante (sem migration e sem providers globais
+registrados, qualquer feature nova herda os bugs estruturais
+já existentes).
+
+============================================================
+FIM DO RELATÓRIO - 19/05/2026
+============================================================

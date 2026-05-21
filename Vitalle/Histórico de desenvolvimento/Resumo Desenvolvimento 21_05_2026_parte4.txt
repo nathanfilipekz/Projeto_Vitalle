@@ -1,0 +1,138 @@
+============================================================
+RESUMO DE DESENVOLVIMENTO - VITALLE
+Data: 21/05/2026 (sessão — parte 4)
+Tipo: Botões Ver Detalhes e Ver Prontuário na aba Pacientes
+Autor: Assistente Claude
+============================================================
+
+ÍNDICE
+------
+1. PatientDetailsModal — modal de preview do cadastro
+2. Botão "Ver detalhes" (Eye) — ação real
+3. Botão "Ver prontuário" (FileText) — navegação com query params
+4. prontuario/page.tsx — leitura de query params
+5. Arquivos tocados nesta sessão
+6. PENDÊNCIAS atualizadas
+
+============================================================
+1. PatientDetailsModal — modal de preview do cadastro
+============================================================
+Arquivo criado: frontend/src/components/pacientes/patient-details-modal.tsx
+
+Props:
+  open: boolean
+  patient: PatientRow | null
+  onClose: () => void
+  onEdit?: (p: PatientRow) => void
+
+Funcionalidades:
+  - Avatar com iniciais do nome (máx. 2 letras)
+  - Badge Ativo / Inativo
+  - Componente interno Row{ icon, label, value } — omite a
+    linha se value for null/undefined/vazio
+  - Campos exibidos: CPF (formatado), Telefone (formatado),
+    E-mail, Data de nascimento, Sexo, Endereço, created_at
+  - Footer opcional: botão "Editar cadastro" (se onEdit fornecido)
+  - Usa ModalShell (max-w-lg) para consistência visual
+
+============================================================
+2. Botão "Ver detalhes" (Eye) — ação real
+============================================================
+Arquivo: frontend/src/app/(dashboard)/pacientes/page.tsx
+
+Mudanças:
+  - PatientCard recebe novas props: onDetails e onProntuario
+  - Botão Eye chama onDetails(patient) → estado detailPatient
+  - Estado adicionado: detailPatient: PatientRow | null
+  - PatientDetailsModal renderizado no final da página:
+      open={detailPatient !== null}
+      patient={detailPatient}
+      onClose={() => setDetailPatient(null)}
+      onEdit={(p) => { setDetailPatient(null); setEditPatient(p); }}
+    (ao clicar "Editar" dentro do modal de detalhes, fecha
+     o preview e abre o EditPatientModal)
+
+============================================================
+3. Botão "Ver prontuário" (FileText) — navegação
+============================================================
+Arquivo: frontend/src/app/(dashboard)/pacientes/page.tsx
+
+  - Importado useRouter de next/navigation
+  - Função handleProntuario(patient: PatientRow):
+      router.push(`/prontuario?pacienteId=${patient.id}&nome=${encodeURIComponent(patient.name)}`)
+  - Botão FileText chama handleProntuario(patient)
+
+============================================================
+4. prontuario/page.tsx — leitura de query params
+============================================================
+Arquivo: frontend/src/app/(dashboard)/prontuario/page.tsx
+
+Refatorado para suportar query params preservando o mock
+de prontuários existente:
+
+  - Componente interno ProntuarioContent usa useSearchParams()
+    para ler pacienteId e nome
+  - ProntuarioPage envolve com <Suspense fallback={null}>
+    (obrigatório pelo Next.js para useSearchParams fora de
+     Suspense boundary — evita erro de build)
+  - useEffect pré-preenche campo de busca com nomeParam ao
+    montar o componente
+  - Header.subtitle muda:
+      Com params: "Exibindo registros de <nome>"
+      Sem params: "Registros médicos dos pacientes"
+  - Banner de contexto (exibido somente com pacienteId):
+      · Link "← Todos os prontuários" → router.replace('/prontuario')
+      · Nome do paciente em destaque
+      · Botão X para limpar filtro
+  - Lista filtrada por search em tempo real (sem debounce —
+    lista é local/mock)
+  - Campo de busca tem botão × que também limpa params via
+    router.replace('/prontuario')
+  - Empty state se filtered.length === 0
+
+============================================================
+5. ARQUIVOS TOCADOS NESTA SESSÃO
+============================================================
+Frontend:
+  src/components/pacientes/patient-details-modal.tsx   [CRIADO]
+  src/app/(dashboard)/pacientes/page.tsx               [editado]
+  src/app/(dashboard)/prontuario/page.tsx              [editado]
+
+Histórico:
+  Histórico de desenvolvimento/
+    Resumo Desenvolvimento 21_05_2026_parte4.txt       [CRIADO]
+
+============================================================
+6. PENDÊNCIAS ATUALIZADAS
+============================================================
+
+RESOLVIDAS NESTA SESSÃO:
+  [x] Botão "Ver detalhes" abre PatientDetailsModal (preview)
+  [x] Botão "Ver prontuário" navega para /prontuario com
+      pacienteId e nome como query params
+  [x] Prontuário pré-filtra e exibe banner de contexto
+      ao receber pacienteId via URL
+
+AINDA ABERTAS (herdadas):
+  [ ] (A.1) Substituir [YOUR-DB-PASSWORD] em backend/.env
+  [ ] (A.2) Substituir SERVICE_ROLE_KEY em backend/.env
+  [ ] (A.3) Confirmar JWT_SECRET e JWT_REFRESH_SECRET
+  [ ] (A.4) Rodar localmente:
+              npm install
+              npx prisma generate
+              npx prisma migrate resolve --applied "0_init"
+  [ ] (A.5) Dropar policies mvp_anon quando backend subir
+  [ ] (B.1) DashboardLayout: isLoading travado sem login
+  [ ] (B.2) registerFirstUser sem transação (tenant órfão)
+  [ ] (B.3) Senha SHA-256 client-side — migrar para bcrypt
+  [ ] (B.4) Warnings SECURITY DEFINER em rls_auto_enable()
+  [ ] (B.6) prisma/seed.ts ainda não existe
+  [ ] (B.7) TOP 10 produtos usa appointments.type como proxy
+  [ ] (D.1) cancelAppointment() órfão em appointments-service
+  [ ] Prontuário ainda usa mock — conectar ao banco Supabase
+      quando tabela medical_records existir no schema
+  [ ] Fases 0–6 do plano original abertas
+
+============================================================
+FIM DO RELATÓRIO — 21/05/2026 (parte 4)
+============================================================

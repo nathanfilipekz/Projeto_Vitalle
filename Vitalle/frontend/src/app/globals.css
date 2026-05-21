@@ -1,0 +1,51 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Playfair+Display:wght@400;500;600;700&display=swap');
+
+@layer base {
+  :root {
+    --background: 40 33% 96%;
+    --foreground: 160 25% 15%;
+    --card: 0 0% 100%;
+    --card-foreground: 160 25% 15%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 160 25% 15%;
+    --primary: 155 25% 33%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 153 18% 63%;
+    --secondary-foreground: 0 0% 0%;
+    --muted: 30 40% 90%;
+    --muted-foreground: 155 25% 33%;
+    --accent: 25 29% 62%;
+    --accent-foreground: 0 0% 0%;
+    --destructive: 0 84% 60%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 30 25% 85%;
+    --input: 30 25% 85%;
+    --ring: 155 25% 33%;
+    --radius: 0.75rem;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground font-sans antialiased;
+  }
+  h1, h2, h3, h4, h5, h6 {
+    @apply font-heading;
+  }
+}
+
+@layer components {
+  .medical-card {
+    @apply bg-[#91AE9E]/10 border border-[#91AE9E]/30 rounded-xl p-6 text-black;
+  }
+  .anamnesis-card {
+    @apply bg-[#91AE9E]/15 border border-[#91AE9E]/40 rounded-xl p-6 text-black;
+  }
+}

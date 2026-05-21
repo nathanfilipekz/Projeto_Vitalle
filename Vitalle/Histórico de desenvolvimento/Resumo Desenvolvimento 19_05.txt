@@ -1,0 +1,49 @@
+Resumo da Entrega
+Frontend (Next.js 14 + TypeScript + Tailwind)
+Landing page com hero, features, planos (Standard R
+197
+/
+P
+l
+u
+s
+R
+197/PlusR397) e footer
+Login/Register com layout split-panel elegante
+Dashboard com stats, consultas do dia e ações rápidas
+Agenda com visualização diária, slots de horário e status coloridos
+Pacientes com grid de cards, busca e filtros
+Prontuário com cards verde claro e texto preto (conforme solicitado)
+Anamnese com cards verde claro e texto preto (conforme solicitado)
+Evolução Clínica com timeline visual
+Financeiro com card de assinatura e histórico de pagamentos
+Configurações com tabs (Perfil, Clínica, Notificações, Segurança)
+Backend (NestJS + Prisma)
+14 módulos implementados: Auth, Tenants, Users, Doctors, Patients, Appointments, Medical Records, Anamnesis, Evolution, Subscriptions, Payments, Invoices, WhatsApp, Contracts
+Autenticação completa com JWT, Refresh Token com rotação, bcrypt
+Guards: JwtAuth, Roles, Tenant (isolamento multi-tenant)
+WhatsApp Business Cloud API: envio de mensagens, lembretes D+1, automações (confirmar/cancelar)
+Pagamentos com webhook PagBank
+Contrato Digital com hash SHA-256, registro de IP/user-agent, aceite obrigatório
+Swagger configurado em /api/docs
+Banco de Dados (Prisma)
+14 tabelas com tenant_id em todas
+9 enums (UserRole, AppointmentStatus, PaymentStatus, etc.)
+Indexes, unique constraints, soft delete em todo schema
+Infraestrutura
+Dockerfiles multi-stage para frontend e backend
+Docker Compose produção (PostgreSQL + Redis + Backend + Frontend)
+Docker Compose desenvolvimento
+Variáveis de ambiente documentadas
+Documentação
+README.md completo
+ARCHITECTURE.md com diagramas
+API.md com todos endpoints
+DEPLOY.md (GCP Cloud Run + VPS)
+RLS.md com SQL para Row Level Security
+Paleta aplicada
+Cor	Hex	Uso
+Verde Escuro	#406B5B	Sidebar, botões, headings
+Verde Claro	#91AE9E	Fichas médicas, anamnese (fundo verde claro, texto preto)
+Tan	#B89D83	Badges, acentos
+Creme	#E4D5C3	Backgrounds, borders

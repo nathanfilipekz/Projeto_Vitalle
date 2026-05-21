@@ -1,0 +1,174 @@
+============================================================
+RESUMO DE DESENVOLVIMENTO - VITALLE
+Data: 21/05/2026 (sessão — tarde/noite)
+Tipo: Correção RLS + Aba Pacientes conectada ao banco
+Autor: Assistente Claude
+============================================================
+
+ÍNDICE
+------
+1. Correção RLS — erro "violates row-level security policy"
+2. Aba Pacientes — conexão com Supabase
+3. patients-service.ts — novas funções
+4. Arquivos tocados nesta sessão
+5. PENDÊNCIAS atualizadas
+
+============================================================
+1. CORREÇÃO RLS — TABELA tenants
+============================================================
+Problema:
+  Ao tentar cadastrar o primeiro usuário via tela de
+  registro, o Supabase retornava:
+    "new row violates row-level security policy for table
+     'tenants'"
+
+Causa raiz:
+  A tabela public.tenants tem RLS habilitado. O frontend
+  usa a anon key do Supabase para fazer INSERT direto, mas
+  as policies mvp_anon (criadas na migration 008 de 20/05)
+  estavam ausentes ou incompletas no banco.
+
+Solução (SQL aplicado no Supabase SQL Editor):
+  -- Remove antigas para evitar conflito
+  DROP POLICY IF EXISTS tenants_mvp_anon      ON public.tenants;
+  DROP POLICY IF EXISTS users_mvp_anon        ON public.users;
+  DROP POLICY IF EXISTS doctors_mvp_anon      ON public.doctors;
+  DROP POLICY IF EXISTS patients_mvp_anon     ON public.patients;
+  DROP POLICY IF EXISTS appointments_mvp_anon ON public.appointments;
+
+  -- Recria com FOR ALL (SELECT + INSERT + UPDATE + DELETE)
+  CREATE POLICY tenants_mvp_anon ON public.tenants
+    FOR ALL TO anon, authenticated
+    USING (true) WITH CHECK (true);
+
+  CREATE POLICY users_mvp_anon ON public.users
+    FOR ALL TO anon, authenticated
+    USING (true) WITH CHECK (true);
+
+  CREATE POLICY doctors_mvp_anon ON public.doctors
+    FOR ALL TO anon, authenticated
+    USING (true) WITH CHECK (true);
+
+  CREATE POLICY patients_mvp_anon ON public.patients
+    FOR ALL TO anon, authenticated
+    USING (true) WITH CHECK (true);
+
+  CREATE POLICY appointments_mvp_anon ON public.appointments
+    FOR ALL TO anon, authenticated
+    USING (true) WITH CHECK (true);
+
+Observação:
+  Essas policies são temporárias (MVP). Quando o backend
+  NestJS estiver autenticando via JWT, elas devem ser
+  dropadas (ver pendência A.5 dos resumos anteriores).
+
+============================================================
+2. ABA PACIENTES — CONEXÃO COM SUPABASE
+============================================================
+A página de Pacientes estava 100% mockada (array local
+com 6 pacientes fictícios). Foi completamente reescrita
+para usar dados reais do banco Supabase.
+
+Mudanças na UX:
+  - REMOVIDO: botão "Filtros" (não existia funcionalidade
+    real por trás dele).
+  - MANTIDO e melhorado: campo de busca — pesquisa por
+    Nome (parcial, case-insensitive), CPF (dígitos) ou
+    Telefone (dígitos) via OR no Supabase.
+  - Busca com debounce de 300 ms para não disparar
+    requisição a cada tecla.
+  - Botão × para limpar a busca rapidamente.
+  - Mensagem de contagem de resultados ao buscar.
+  - "Novo Paciente" abre o NewPatientModal já existente;
+    ao cadastrar, lista e stats são atualizados sem reload.
+
+Estatísticas (reais, sem mocks):
+  - Total de Pacientes: count de is_active=true.
+  - Novos este mês: count com created_at >= início do mês.
+  - Card "Aniversariantes" removido (dados insuficientes
+    no MVP; maioria dos pacientes sem date_of_birth).
+
+Cards de paciente:
+  - Dados reais: nome, CPF formatado, telefone formatado,
+    e-mail (se existir), data de nascimento (se existir),
+    badge Ativo/Inativo.
+  - Botões "Ver prontuário" e "Ver detalhes" mantidos
+    (sem ação ainda — placeholder para fase futura).
+  - Empty state amigável com link direto para cadastro.
+
+============================================================
+3. patients-service.ts — NOVAS FUNÇÕES
+============================================================
+Arquivo: frontend/src/services/patients-service.ts
+
+  listPatients(tenantId, limit=100)          [ATUALIZADO]
+    - Ordenação por nome (asc) em vez de created_at.
+    - Filtra is_active=true além de deleted_at null.
+
+  searchPatients(tenantId, query, limit=50)  [CRIADO]
+    - Extrai dígitos do query para busca em cpf e phone.
+    - Monta .or('name.ilike.%X%,cpf.like.%Y%,phone.like.%Y%')
+    - Ativa somente com query.trim().length >= 2.
+
+  getPatientStats(tenantId)                  [CRIADO]
+    - Duas queries count com head:true (eficientes).
+    - Retorna PatientStats { total, thisMonth }.
+
+  PatientStats (interface)                   [CRIADO]
+    - { total: number; thisMonth: number }
+
+  onCreated (prop do NewPatientModal)        [AJUSTE]
+    - Tipo simplificado de (data: PatientFormData) => void
+      para () => void — o componente não precisa expor
+      o payload após salvar.
+
+============================================================
+4. ARQUIVOS TOCADOS NESTA SESSÃO
+============================================================
+Frontend:
+  src/services/patients-service.ts                   [editado]
+  src/app/(dashboard)/pacientes/page.tsx             [reescrito]
+  src/components/dashboard/new-patient-modal.tsx     [ajuste de tipo]
+
+Banco Supabase (qakfcyurfroqjvykbdwe):
+  5 policies mvp_anon recriadas via SQL Editor
+  (tenants, users, doctors, patients, appointments).
+
+Histórico:
+  Histórico de desenvolvimento/
+    Resumo Desenvolvimento 21_05_2026_parte3.txt     [CRIADO]
+
+============================================================
+5. PENDÊNCIAS ATUALIZADAS
+============================================================
+
+RESOLVIDAS NESTA SESSÃO:
+  [x] Erro RLS no cadastro de primeiro usuário.
+  [x] Aba Pacientes conectada ao banco (sem mocks).
+  [x] Busca por CPF, Nome e Telefone funcionando.
+  [x] Botão Filtros removido conforme solicitado.
+  [x] Stats de pacientes com dados reais.
+
+AINDA ABERTAS (herdadas):
+  [ ] (A.1) Substituir [YOUR-DB-PASSWORD] em backend/.env
+  [ ] (A.2) Substituir SERVICE_ROLE_KEY em backend/.env
+  [ ] (A.3) Confirmar JWT_SECRET e JWT_REFRESH_SECRET
+  [ ] (A.4) Rodar localmente:
+              npm install
+              npx prisma generate
+              npx prisma migrate resolve --applied "0_init"
+  [ ] (A.5) Dropar policies mvp_anon quando backend subir
+  [ ] (B.1) DashboardLayout: isLoading travado sem login
+  [ ] (B.2) registerFirstUser sem transação (tenant órfão)
+  [ ] (B.3) Senha SHA-256 client-side — migrar para bcrypt
+  [ ] (B.4) Warnings SECURITY DEFINER em rls_auto_enable()
+  [ ] (B.6) prisma/seed.ts ainda não existe
+  [ ] (B.7) TOP 10 produtos usa appointments.type como proxy
+  [ ] (D.1) cancelAppointment() órfão em appointments-service
+  [ ] Botões "Ver prontuário" e "Ver detalhes" na aba
+      Pacientes ainda sem ação (placeholder)
+  [ ] Fases 0–6 do plano original abertas
+
+============================================================
+FIM DO RELATÓRIO — 21/05/2026 (parte 3)
+============================================================

@@ -1,0 +1,188 @@
+============================================================
+RESUMO DE DESENVOLVIMENTO - VITALLE
+Data: 21/05/2026 (sessão — parte 5)
+Tipo: Aba Prontuário conectada ao banco (medical_records)
+Autor: Assistente Claude
+============================================================
+
+ÍNDICE
+------
+1. RLS policy para medical_records e patient_evolutions
+2. medical-records-service.ts (novo)
+3. NovoProntuarioModal (novo)
+4. EditProntuarioModal (novo)
+5. ProntuarioDetailModal (novo)
+6. prontuario/page.tsx (reescrito)
+7. Arquivos tocados nesta sessão
+8. PENDÊNCIAS atualizadas
+
+============================================================
+1. RLS POLICY — medical_records e patient_evolutions
+============================================================
+Migration aplicada via MCP Supabase (apply_migration):
+  mvp_anon_medical_records
+
+  DROP POLICY IF EXISTS medical_records_mvp_anon   ON public.medical_records;
+  DROP POLICY IF EXISTS patient_evolutions_mvp_anon ON public.patient_evolutions;
+
+  CREATE POLICY medical_records_mvp_anon ON public.medical_records
+    FOR ALL TO anon, authenticated USING (true) WITH CHECK (true);
+
+  CREATE POLICY patient_evolutions_mvp_anon ON public.patient_evolutions
+    FOR ALL TO anon, authenticated USING (true) WITH CHECK (true);
+
+============================================================
+2. medical-records-service.ts
+============================================================
+Arquivo: frontend/src/services/medical-records-service.ts
+
+Interfaces:
+  MedicalRecordPatient   { id, name, cpf, phone, date_of_birth }
+  MedicalRecordRow       (todos os campos + patients: join)
+  CreateMedicalRecordPayload / UpdateMedicalRecordPayload
+  AppointmentHistoryRow  { id, date_time, status, type, notes }
+
+Funções:
+  resolveDoctorId(tenantId, userId)
+    → SELECT id FROM doctors WHERE user_id=? AND tenant_id=?
+    → Necessário pois medical_records.doctor_id é NOT NULL e
+      o auth store armazena user.id (users table), não doctor.id
+
+  listMedicalRecords(tenantId)
+    → SELECT *, patients(id,name,cpf,phone,date_of_birth)
+    → ORDER BY created_at DESC, is deleted_at null
+
+  getMedicalRecordsByPatient(tenantId, patientId)
+    → Igual mas filtrado por patient_id
+
+  searchMedicalRecords(records[], query)  [client-side]
+    → Filtra por name.toLowerCase, cpf digits, phone digits
+
+  createMedicalRecord(payload)    → INSERT + retorna com join
+  updateMedicalRecord(id, ...)    → UPDATE + retorna com join
+  deleteMedicalRecord(id, ...)    → soft-delete (deleted_at)
+
+  getPatientAppointmentHistory(tenantId, patientId, limit=20)
+    → SELECT id,date_time,status,type,notes FROM appointments
+    → ORDER BY date_time DESC
+
+============================================================
+3. NovoProntuarioModal
+============================================================
+Arquivo: frontend/src/components/prontuario/novo-prontuario-modal.tsx
+
+Fluxo em 2 etapas:
+  Etapa 1 — "Localizar paciente por CPF"
+    · Input com máscara CPF + botão "Buscar"
+    · Pesquisa: SELECT FROM patients WHERE cpf LIKE %digits%
+    · Enter no campo também dispara a busca
+    · Exibe card com nome, CPF, telefone do paciente encontrado
+    · Mensagem "não encontrado" se nenhum resultado
+
+  Etapa 2 — "Dados do prontuário" (visível só após localizar)
+    · Campos: queixa principal, história da doença atual,
+      antecedentes pessoais, histórico familiar, diagnóstico,
+      avaliação/exame físico, plano terapêutico, prescrição
+    · Botão "Salvar prontuário" chama resolveDoctorId() antes
+      de createMedicalRecord()
+
+============================================================
+4. EditProntuarioModal
+============================================================
+Arquivo: frontend/src/components/prontuario/edit-prontuario-modal.tsx
+
+  · Props: open, record: MedicalRecordRow|null, onClose, onUpdated
+  · useEffect preenche o formulário quando record muda
+  · Mesmo conjunto de campos do Novo
+  · subtitle mostra o nome do paciente
+  · Chama updateMedicalRecord ao submeter
+
+============================================================
+5. ProntuarioDetailModal
+============================================================
+Arquivo: frontend/src/components/prontuario/prontuario-detail-modal.tsx
+
+  · Cabeçalho: avatar/iniciais, nome, CPF, telefone, nascimento
+  · Seção "Dados clínicos": todos os campos do prontuário
+    (queixa, HDA, antecedentes, histórico familiar, avaliação,
+     diagnóstico, plano, prescrição) com ícones Lucide
+  · Seção "Histórico de consultas":
+    - Carrega getPatientAppointmentHistory() ao abrir modal
+    - Lista data/hora, tipo, notas, badge de status colorido
+    - Spinner durante carregamento
+  · Rodapé: botão "Editar prontuário" (opcional via prop onEdit)
+
+============================================================
+6. prontuario/page.tsx — REESCRITO
+============================================================
+Arquivo: frontend/src/app/(dashboard)/prontuario/page.tsx
+
+Estrutura:
+  ProntuarioContent (usa useSearchParams → dentro de Suspense)
+  ProntuarioPage (export default, envolve com <Suspense>)
+
+Funcionalidades:
+  - Carrega listMedicalRecords() ao montar
+  - Se vier com ?pacienteId=... filtra só registros desse paciente
+    e mostra banner de contexto com nome + botão para limpar
+  - Campo de busca com debounce → searchMedicalRecords() (client-side)
+    busca em nome, CPF e telefone do paciente
+  - Grid de cards RecordCard (1/2/3 colunas responsivo)
+  - RecordCard:
+    · Mostra nome, CPF, diagnóstico (ou queixa) e data
+    · Hover revela "Ver completo" (Eye)
+    · Click no card → ProntuarioDetailModal
+    · RowMenu (3 pontos) com editar / excluir (soft-delete)
+      com confirmação inline de 2 passos
+  - Botão "Novo Prontuário" → NovoProntuarioModal
+  - Atualização optimística: created push front, updated replace
+  - Empty state amigável com link direto para criar
+
+============================================================
+7. ARQUIVOS TOCADOS NESTA SESSÃO
+============================================================
+Frontend:
+  src/services/medical-records-service.ts                [CRIADO]
+  src/components/prontuario/novo-prontuario-modal.tsx    [CRIADO]
+  src/components/prontuario/edit-prontuario-modal.tsx    [CRIADO]
+  src/components/prontuario/prontuario-detail-modal.tsx  [CRIADO]
+  src/app/(dashboard)/prontuario/page.tsx                [reescrito]
+
+Banco Supabase (qakfcyurfroqjvykbdwe):
+  Migration: mvp_anon_medical_records
+  Policies criadas: medical_records_mvp_anon, patient_evolutions_mvp_anon
+
+Histórico:
+  Histórico de desenvolvimento/
+    Resumo Desenvolvimento 21_05_2026_parte5.txt         [CRIADO]
+
+============================================================
+8. PENDÊNCIAS ATUALIZADAS
+============================================================
+
+RESOLVIDAS NESTA SESSÃO:
+  [x] Aba Prontuário conectada à tabela medical_records
+  [x] Novo Prontuário com busca por CPF para localizar paciente
+  [x] Editar prontuário (todos os campos)
+  [x] Excluir prontuário (soft-delete com confirmação)
+  [x] Buscar por nome, CPF ou telefone na lista
+  [x] Detalhe do prontuário com histórico de consultas
+
+AINDA ABERTAS (herdadas):
+  [ ] (A.1) Substituir [YOUR-DB-PASSWORD] em backend/.env
+  [ ] (A.2) Substituir SERVICE_ROLE_KEY em backend/.env
+  [ ] (A.3) Confirmar JWT_SECRET e JWT_REFRESH_SECRET
+  [ ] (A.4) Rodar localmente: npm install, prisma generate, migrate resolve
+  [ ] (A.5) Dropar policies mvp_anon quando backend subir
+  [ ] (B.1) DashboardLayout: isLoading travado sem login
+  [ ] (B.2) registerFirstUser sem transação (tenant órfão)
+  [ ] (B.3) Senha SHA-256 client-side — migrar para bcrypt
+  [ ] (B.4) Warnings SECURITY DEFINER em rls_auto_enable()
+  [ ] (B.6) prisma/seed.ts ainda não existe
+  [ ] (B.7) TOP 10 produtos usa appointments.type como proxy
+  [ ] (D.1) cancelAppointment() órfão em appointments-service
+  [ ] Fases 0–6 do plano original abertas
+
+============================================================
+FIM DO RELATÓRIO — 21/05/2026 (parte 5)
+============================================================
