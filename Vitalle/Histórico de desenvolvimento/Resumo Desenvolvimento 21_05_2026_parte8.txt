@@ -1,0 +1,176 @@
+============================================================
+RESUMO DE DESENVOLVIMENTO - VITALLE
+Data: 21/05/2026 (sessão — parte 8)
+Tipo: Aba Anamnese no prontuário — questionário Geral com 14 perguntas
+Autor: Assistente Claude
+============================================================
+
+ÍNDICE
+------
+1. Migration Supabase (anamnese_responses)
+2. Serviço anamnese-service.ts
+3. Componente AnamneseTab
+4. Integração em prontuario/page.tsx
+5. Arquivos tocados nesta sessão
+6. PENDÊNCIAS atualizadas
+
+============================================================
+1. MIGRATION SUPABASE (aplicada na parte 7)
+============================================================
+Migration: create_anamnese_responses
+
+  CREATE TABLE public.anamnese_responses (
+    id                 uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    tenant_id          uuid NOT NULL REFERENCES public.tenants(id) ON DELETE CASCADE,
+    patient_id         uuid NOT NULL REFERENCES public.patients(id) ON DELETE CASCADE,
+    questionnaire_type text NOT NULL DEFAULT 'Geral',
+    responses          jsonb NOT NULL DEFAULT '{}',
+    filled_at          timestamptz NOT NULL DEFAULT now(),
+    filled_by          text NOT NULL DEFAULT 'doctor',
+    created_at         timestamptz NOT NULL DEFAULT now(),
+    updated_at         timestamptz NOT NULL DEFAULT now(),
+    deleted_at         timestamptz
+  );
+
+  Índices:
+    · idx_anamnese_tenant_patient   ON (tenant_id, patient_id)
+    · idx_anamnese_patient_type     ON (patient_id, questionnaire_type)
+
+  RLS Policy:
+    · anamnese_mvp_anon — FOR ALL TO anon, authenticated USING (true)
+
+============================================================
+2. SERVIÇO anamnese-service.ts
+============================================================
+Arquivo: src/services/anamnese-service.ts  [CRIADO]
+
+Exporta:
+  · GERAL_QUESTIONS: AnamneseQuestion[] — 14 perguntas do questionário Geral
+      Tipos: 'sim_nao' | 'texto'
+      redFlagWhen: 'sim' (para Sim/Não) | 'filled' (para campos de texto)
+
+  · QUESTIONNAIRES: Record<string, AnamneseQuestion[]>
+      Estrutura extensível para futuros questionários
+
+  · Interfaces:
+      AnamneseQuestion, AnamneseResponseRow, SaveAnamnesePayload
+
+  · Funções:
+      getAnamneseByPatient(tenantId, patientId, type?) → AnamneseResponseRow | null
+      saveAnamnese(payload)  → upsert: atualiza se existe, insere se não existe
+
+As 14 perguntas do questionário Geral:
+  1.  Está grávida ou suspeita de gravidez?         (sim_nao, 🚩 em Sim)
+  2.  Tem pressão alta?                              (sim_nao, 🚩 em Sim)
+  3.  Tem diabetes?                                  (sim_nao, 🚩 em Sim)
+  4.  Tem problema cardíaco?                         (sim_nao, 🚩 em Sim)
+  5.  Tem problema de coagulação sanguínea?          (sim_nao, 🚩 em Sim)
+  6.  Tem problema renal?                            (sim_nao, 🚩 em Sim)
+  7.  Tem problema hepático (fígado)?                (sim_nao, 🚩 em Sim)
+  8.  Tem doença autoimune?                          (sim_nao, 🚩 em Sim)
+  9.  Faz uso de algum medicamento?                  (texto,   🚩 se preenchido)
+  10. Tem alguma alergia?                            (texto,   🚩 se preenchido)
+  11. Já realizou cirurgia?                          (sim_nao, 🚩 em Sim)
+  12. Tem histórico de queloides?                    (sim_nao, 🚩 em Sim)
+  13. Tem fobia de agulhas?                          (sim_nao, 🚩 em Sim)
+  14. Tem herpes labial?                             (sim_nao, 🚩 em Sim)
+
+============================================================
+3. COMPONENTE AnamneseTab
+============================================================
+Arquivo: src/components/prontuario/anamnese-tab.tsx  [CRIADO]
+
+Props:
+  · tenantId: string
+  · patientId: string
+
+Comportamento:
+  · Ao montar, carrega anamnese existente via getAnamneseByPatient()
+  · Se não existe registro: entra automaticamente em modo edição
+  · Se existe: exibe em modo visualização com botão "Editar"
+
+Layout:
+  ┌─ Dropdown "Selecione o questionário de anamnese"  |  [Geral badge] [Editar/Salvar] ─┐
+  ├──────────────────────────────────────────────────────────────────────────────────────┤
+  │  PERGUNTA                                         │  RESPOSTA                         │
+  ├──────────────────────────────────────────────────────────────────────────────────────┤
+  │  🚩 Está grávida ou suspeita de gravidez?         │  [Sim] [Não]                     │
+  │     Tem pressão alta?                             │  [Sim] [Não]                     │
+  │  ...                                              │  ...                              │
+  │     Faz uso de algum medicamento?                 │  [input de texto]                │
+  └──────────────────────────────────────────────────────────────────────────────────────┘
+  Preenchido pelo profissional em DD/MM/YYYY HH:MM
+
+Detalhes de UX:
+  · Modo visualização: respostas em texto simples, Sim em vermelho, Não em verde
+  · Modo edição: botões Sim/Não coloridos + input de texto para campo livre
+  · 🚩 aparece à esquerda da pergunta quando há resposta "positiva"
+  · Linhas alternadas (zebra striping)
+  · Dropdown do tipo de questionário com animação de seleção
+  · Botão Salvar dispara upsert, exibe spinner, fecha edição ao sucesso
+
+============================================================
+4. INTEGRAÇÃO EM prontuario/page.tsx
+============================================================
+Arquivo: src/app/(dashboard)/prontuario/page.tsx  [EDITADO]
+
+Mudanças:
+  · Import adicionado: import { AnamneseTab } from '@/components/prontuario/anamnese-tab'
+  · Condicional de renderização expandida de if/else para:
+      activeTab === 'Evolução'  → timeline existente
+      activeTab === 'Anamnese'  → <AnamneseTab tenantId={tenantId} patientId={patientId} />
+      outros tabs               → placeholder "em desenvolvimento"
+
+============================================================
+5. ARQUIVOS TOCADOS NESTA SESSÃO
+============================================================
+Frontend:
+  src/services/anamnese-service.ts                   [CRIADO]
+    · Interfaces: AnamneseQuestion, AnamneseResponseRow, SaveAnamnesePayload
+    · Constantes: GERAL_QUESTIONS (14 perguntas), QUESTIONNAIRES
+    · Funções: getAnamneseByPatient(), saveAnamnese()
+
+  src/components/prontuario/anamnese-tab.tsx         [CRIADO]
+    · Componente AnamneseTab completo
+    · Modo visualização + modo edição
+    · Botões Sim/Não, input de texto, indicador 🚩
+
+  src/app/(dashboard)/prontuario/page.tsx            [EDITADO]
+    · Import AnamneseTab adicionado
+    · Renderização condicional da aba Anamnese
+
+Histórico:
+  Histórico de desenvolvimento/
+    Resumo Desenvolvimento 21_05_2026_parte8.txt     [CRIADO]
+
+============================================================
+6. PENDÊNCIAS ATUALIZADAS
+============================================================
+
+RESOLVIDAS NESTA SESSÃO:
+  [x] Aba Anamnese — questionário Geral com 14 perguntas
+  [x] Indicador de red flag 🚩 para respostas positivas/preenchidas
+  [x] Modo edição/visualização com upsert no banco
+  [x] Dropdown para seleção do tipo de questionário (extensível)
+
+AINDA ABERTAS (herdadas):
+  [ ] (A.1) Substituir [YOUR-DB-PASSWORD] em backend/.env
+  [ ] (A.2) Substituir SERVICE_ROLE_KEY em backend/.env
+  [ ] (A.3) Confirmar JWT_SECRET e JWT_REFRESH_SECRET
+  [ ] (A.4) Rodar localmente: npm install, prisma generate, migrate resolve
+  [ ] (A.5) Dropar policies mvp_anon quando backend subir
+  [ ] (B.1) DashboardLayout: isLoading travado sem login
+  [ ] (B.2) registerFirstUser sem transação (tenant órfão)
+  [ ] (B.3) Senha SHA-256 client-side — migrar para bcrypt
+  [ ] (B.4) Warnings SECURITY DEFINER em rls_auto_enable()
+  [ ] (B.6) prisma/seed.ts ainda não existe
+  [ ] (B.7) TOP 10 produtos usa appointments.type como proxy
+  [ ] (D.1) cancelAppointment() órfão em appointments-service
+  [ ] prop index no PatientTableRow pode ser removida em refactor
+  [ ] Fases 0–6 do plano original abertas
+  [ ] Demais abas do prontuário: Plano de tratamento, Harmonização,
+      Prescrições e Laudos, Anexos, Contratos e Termos, Financeiro, Convênios
+
+============================================================
+FIM DO RELATÓRIO — 21/05/2026 (parte 8)
+============================================================

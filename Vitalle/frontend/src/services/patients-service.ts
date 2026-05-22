@@ -9,10 +9,13 @@ export interface PatientRow {
   email: string | null;
   date_of_birth: string | null;
   gender: string | null;
+  zip_code: string | null;
   address: string | null;
+  address_number: string | null;
+  address_complement: string | null;
+  neighborhood: string | null;
   city: string | null;
   state: string | null;
-  zip_code: string | null;
   is_active: boolean;
   created_at: string;
   updated_at: string;
@@ -26,7 +29,13 @@ export interface CreatePatientPayload {
   email?: string | null;
   dateOfBirth?: string | null;
   gender?: string | null;
+  zipCode?: string | null;
   address?: string | null;
+  addressNumber?: string | null;
+  addressComplement?: string | null;
+  neighborhood?: string | null;
+  city?: string | null;
+  state?: string | null;
 }
 
 export interface PatientStats {
@@ -36,15 +45,21 @@ export interface PatientStats {
 
 export async function createPatient(payload: CreatePatientPayload): Promise<PatientRow> {
   const insertPayload = {
-    tenant_id: payload.tenantId,
-    name: payload.name.trim(),
-    cpf: payload.cpf,
-    phone: payload.phone,
-    email: payload.email?.trim() || null,
-    date_of_birth: payload.dateOfBirth ? payload.dateOfBirth : null,
-    gender: payload.gender || null,
-    address: payload.address?.trim() || null,
-    is_active: true,
+    tenant_id:          payload.tenantId,
+    name:               payload.name.trim(),
+    cpf:                payload.cpf,
+    phone:              payload.phone,
+    email:              payload.email?.trim() || null,
+    date_of_birth:      payload.dateOfBirth || null,
+    gender:             payload.gender || null,
+    zip_code:           payload.zipCode || null,
+    address:            payload.address?.trim() || null,
+    address_number:     payload.addressNumber?.trim() || null,
+    address_complement: payload.addressComplement?.trim() || null,
+    neighborhood:       payload.neighborhood?.trim() || null,
+    city:               payload.city?.trim() || null,
+    state:              payload.state?.trim() || null,
+    is_active:          true,
   };
 
   const { data, error } = await supabase
@@ -142,7 +157,13 @@ export interface UpdatePatientPayload {
   email?: string | null;
   dateOfBirth?: string | null;
   gender?: string | null;
+  zipCode?: string | null;
   address?: string | null;
+  addressNumber?: string | null;
+  addressComplement?: string | null;
+  neighborhood?: string | null;
+  city?: string | null;
+  state?: string | null;
 }
 
 export async function updatePatient(
@@ -151,13 +172,19 @@ export async function updatePatient(
   payload: UpdatePatientPayload,
 ): Promise<PatientRow> {
   const updateData: Record<string, unknown> = {};
-  if (payload.name !== undefined)        updateData.name          = payload.name.trim();
-  if (payload.cpf !== undefined)         updateData.cpf           = payload.cpf;
-  if (payload.phone !== undefined)       updateData.phone         = payload.phone;
-  if (payload.email !== undefined)       updateData.email         = payload.email?.trim() || null;
-  if (payload.dateOfBirth !== undefined) updateData.date_of_birth = payload.dateOfBirth || null;
-  if (payload.gender !== undefined)      updateData.gender        = payload.gender || null;
-  if (payload.address !== undefined)     updateData.address       = payload.address?.trim() || null;
+  if (payload.name !== undefined)              updateData.name               = payload.name.trim();
+  if (payload.cpf !== undefined)               updateData.cpf                = payload.cpf;
+  if (payload.phone !== undefined)             updateData.phone              = payload.phone;
+  if (payload.email !== undefined)             updateData.email              = payload.email?.trim() || null;
+  if (payload.dateOfBirth !== undefined)       updateData.date_of_birth      = payload.dateOfBirth || null;
+  if (payload.gender !== undefined)            updateData.gender             = payload.gender || null;
+  if (payload.zipCode !== undefined)           updateData.zip_code           = payload.zipCode || null;
+  if (payload.address !== undefined)           updateData.address            = payload.address?.trim() || null;
+  if (payload.addressNumber !== undefined)     updateData.address_number     = payload.addressNumber?.trim() || null;
+  if (payload.addressComplement !== undefined) updateData.address_complement = payload.addressComplement?.trim() || null;
+  if (payload.neighborhood !== undefined)      updateData.neighborhood       = payload.neighborhood?.trim() || null;
+  if (payload.city !== undefined)              updateData.city               = payload.city?.trim() || null;
+  if (payload.state !== undefined)             updateData.state              = payload.state?.trim() || null;
 
   const { data, error } = await supabase
     .from('patients')

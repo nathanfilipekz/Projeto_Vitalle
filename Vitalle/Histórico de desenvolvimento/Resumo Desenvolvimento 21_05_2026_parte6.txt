@@ -1,0 +1,164 @@
+============================================================
+RESUMO DE DESENVOLVIMENTO - VITALLE
+Data: 21/05/2026 (sessão — parte 6)
+Tipo: Infraestrutura local + Aba Pacientes (novo layout tabela)
+Autor: Assistente Claude
+============================================================
+
+ÍNDICE
+------
+1. Conexão Supabase via MCP
+2. Configuração do ambiente local (.env.local)
+3. Ajuste no limite de cadastro de usuários
+4. Aba Pacientes — reescrita com layout de tabela
+5. Arquivos tocados nesta sessão
+6. PENDÊNCIAS atualizadas
+
+============================================================
+1. CONEXÃO SUPABASE VIA MCP
+============================================================
+Conector MCP oficial do Supabase conectado com sucesso.
+  Projeto: qakfcyurfroqjvykbdwe (Data_base_vitalle_prd)
+  URL: https://qakfcyurfroqjvykbdwe.supabase.co
+  Acesso: via Personal Access Token (PAT) do dono do projeto
+
+Ferramentas disponíveis via MCP:
+  execute_sql, list_tables, list_migrations, apply_migration,
+  get_project_url, get_publishable_keys, get_advisors, get_logs, etc.
+
+Chaves obtidas via MCP (get_publishable_keys):
+  anon key (legacy JWT): eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+    (usada no frontend MVP com policies mvp_anon)
+  publishable key: sb_publishable_WmglL8_kMR8jZvqsAip8iA_J0_b2G3R
+
+============================================================
+2. CONFIGURAÇÃO DO AMBIENTE LOCAL
+============================================================
+Arquivo criado: frontend/.env.local
+
+  NEXT_PUBLIC_SUPABASE_URL=https://qakfcyurfroqjvykbdwe.supabase.co
+  NEXT_PUBLIC_SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+
+Contexto:
+  · Node.js instalado na máquina do usuário (v20 LTS)
+  · Comando para iniciar o frontend localmente:
+      cd frontend && npm install && npm run dev
+  · Frontend disponível em http://localhost:3000
+
+============================================================
+3. AJUSTE NO LIMITE DE CADASTRO DE USUÁRIOS
+============================================================
+Problema:
+  A plataforma bloqueava qualquer novo cadastro pois já existia
+  1 usuário no banco (Mayke Ribeiro Barbosa, criado em 20/05/2026).
+  A função hasAnyUser() retornava true para count > 0.
+
+Solução:
+  Limite alterado de 1 para 2 usuários por instância MVP.
+
+Arquivo: frontend/src/services/auth-service.ts
+  Antes:  return (count ?? 0) > 0;
+  Depois: return (count ?? 0) >= 2;
+
+Arquivo: frontend/src/app/(auth)/register/page.tsx
+  Mensagem atualizada:
+  Antes:  "Já existe um usuário cadastrado nesta ferramenta.
+           Apenas um usuário pode ser criado por instância."
+  Depois: "O limite de 2 usuários por instância foi atingido."
+
+============================================================
+4. ABA PACIENTES — REESCRITA COM LAYOUT DE TABELA
+============================================================
+Arquivo: frontend/src/app/(dashboard)/pacientes/page.tsx
+  [REESCRITO COMPLETAMENTE]
+
+Layout anterior:
+  · Grid de cards (1/2/3 colunas responsivo)
+  · Botões de ação espalhados no rodapé de cada card (olho, prontuário)
+  · Menu 3 pontos com: editar, excluir
+
+Novo layout — tabela estilo lista profissional:
+  · Cabeçalho com colunas: Código | Nome | Telefones | CPF | E-Mail | (ações)
+  · Código: numeração sequencial (1, 2, 3...) gerada via index do array
+  · Nome: avatar com iniciais + nome em maiúsculas
+  · Telefones: formatado via formatPhone()
+  · CPF: formatado via formatCPF()
+  · E-Mail: truncado com max-w se necessário
+  · Linha com hover highlight (bg-[#F7F3EE])
+
+Componente RowMenu (novo):
+  · Botão "OPÇÕES" verde com chevron animado
+  · Dropdown escuro (bg-[#1a1a1a]) com bordas brancas/10
+  · Opções:
+      - "Editar Paciente"     → abre EditPatientModal
+      - "Prontuário do Paciente" → router.push(/prontuario?pacienteId=...&nome=...)
+  · Fecha ao clicar fora (mousedown listener)
+
+Funcionalidades mantidas:
+  · Barra de busca com debounce 300ms (nome, CPF, telefone)
+  · Botão "Criar Novo Paciente" (abre NewPatientModal)
+  · Cards de estatísticas: Total de Pacientes e Novos este mês
+  · Empty state com link para cadastrar primeiro paciente
+  · Busca via listPatients() / searchPatients() no Supabase
+  · EditPatientModal integrado (edição completa com pré-preenchimento)
+  · Navegação para /prontuario com query params (pacienteId + nome)
+
+Funcionalidades removidas do layout (mas lógica preservada):
+  · PatientDetailsModal (modal de detalhes do paciente)
+    → removido do fluxo visual para simplificar; pode ser reintegrado
+  · Opção "Excluir paciente" do menu
+    → função deletePatient() permanece no serviço, pode ser reativada
+
+Verificação no banco:
+  · Tabela patients: 20 colunas, todas presentes e acessíveis
+  · Policies ativas: patients_mvp_anon (ALL, USING true) +
+                     patients_tenant_isolation (ALL, por tenant_id)
+  · Query de validação executada: 1 paciente ativo retornado com sucesso
+    (Fernanda Claudia Vila, tenant correto)
+
+============================================================
+5. ARQUIVOS TOCADOS NESTA SESSÃO
+============================================================
+Frontend:
+  frontend/.env.local                                      [CRIADO]
+  src/services/auth-service.ts                             [EDITADO]
+    · hasAnyUser(): limite alterado de >0 para >=2
+  src/app/(auth)/register/page.tsx                         [EDITADO]
+    · Mensagem de bloqueio atualizada
+  src/app/(dashboard)/pacientes/page.tsx                   [REESCRITO]
+    · Layout de cards → tabela com botão OPÇÕES
+
+Histórico:
+  Histórico de desenvolvimento/
+    Resumo Desenvolvimento 21_05_2026_parte6.txt           [CRIADO]
+
+============================================================
+6. PENDÊNCIAS ATUALIZADAS
+============================================================
+
+RESOLVIDAS NESTA SESSÃO:
+  [x] Ambiente local configurado (Node.js + .env.local)
+  [x] Limite de usuários ajustado para 2 por instância
+  [x] Aba Pacientes com novo layout de tabela profissional
+  [x] Botão OPÇÕES com "Editar Paciente" e "Prontuário do Paciente"
+  [x] Conexão MCP Supabase ativa para gerenciamento direto do banco
+
+AINDA ABERTAS (herdadas):
+  [ ] (A.1) Substituir [YOUR-DB-PASSWORD] em backend/.env
+  [ ] (A.2) Substituir SERVICE_ROLE_KEY em backend/.env
+  [ ] (A.3) Confirmar JWT_SECRET e JWT_REFRESH_SECRET
+  [ ] (A.4) Rodar localmente: npm install, prisma generate, migrate resolve
+  [ ] (A.5) Dropar policies mvp_anon quando backend subir
+  [ ] (B.1) DashboardLayout: isLoading travado sem login
+  [ ] (B.2) registerFirstUser sem transação (tenant órfão)
+  [ ] (B.3) Senha SHA-256 client-side — migrar para bcrypt
+  [ ] (B.4) Warnings SECURITY DEFINER em rls_auto_enable()
+  [ ] (B.6) prisma/seed.ts ainda não existe
+  [ ] (B.7) TOP 10 produtos usa appointments.type como proxy
+  [ ] (D.1) cancelAppointment() órfão em appointments-service
+  [ ] PatientDetailsModal desacoplado — reintegrar se necessário
+  [ ] Fases 0–6 do plano original abertas
+
+============================================================
+FIM DO RELATÓRIO — 21/05/2026 (parte 6)
+============================================================

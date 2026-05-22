@@ -1,0 +1,255 @@
+============================================================
+RESUMO DE DESENVOLVIMENTO - VITALLE
+Data: 21/05/2026 (sessão — parte 9)
+Tipo: Melhorias Anamnese + Aba Prescrições e Laudos + Aba Anexos
+Autor: Assistente Claude
+============================================================
+
+ÍNDICE
+------
+1. Melhorias na aba Anamnese
+2. Aba Prescrições e Laudos
+3. Aba Anexos
+4. Arquivos tocados nesta sessão
+5. PENDÊNCIAS atualizadas
+
+============================================================
+1. MELHORIAS NA ABA ANAMNESE
+============================================================
+
+1.1 Validação de salvamento
+  · Botão Salvar bloqueado até todas as 14 perguntas serem respondidas
+  · Aviso vermelho no topo da tabela listando os campos em aberto
+  · Linhas sem resposta ficam com fundo vermelho claro + ícone de alerta
+  · Ao responder uma pergunta, ela sai automaticamente da lista de faltantes
+
+1.2 Cores corrigidas (Sim/Não)
+  · Sim → verde  (bg-green-100 / border-green-400 / text-green-700)
+  · Não → vermelho (bg-red-100 / border-red-400 / text-red-600)
+  · No modo visualização: Sim = text-green-600, Não = text-red-500
+
+1.3 Input condicional por pergunta
+  Perguntas que ganham campo de texto ao clicar Sim:
+    · Tem doença autoimune?         → "Qual doença autoimune?"
+    · Faz uso de algum medicamento? → "Quais medicamentos e posologia?"
+    · Já realizou cirurgia?         → "Qual a cirurgia?"
+    · Tem alguma alergia?           → "Qual alergia e quando foi identificada?"
+  Comportamento:
+    · Ao clicar Não: campo some e conteúdo é apagado automaticamente
+    · No modo visualização: detalhe aparece como "↳ texto" abaixo da resposta
+    · Detalhe armazenado com chave {id}_detail no JSONB responses
+
+1.4 Pergunta "Tem alguma alergia?" migrada
+  · Antes: type 'texto' (input livre sempre visível)
+  · Agora: type 'sim_nao' com conditionalInput = true
+  · Placeholder: "Qual alergia e quando foi identificada?"
+
+Arquivos alterados:
+  src/services/anamnese-service.ts     [EDITADO]
+    · Nova flag: conditionalInput?: boolean
+    · Nova flag: conditionalPlaceholder?: string
+    · medications: tipo alterado de 'texto' para 'sim_nao' + conditionalInput
+    · allergies:   tipo alterado de 'texto' para 'sim_nao' + conditionalInput
+    · autoimmune e surgery: conditionalInput adicionado
+
+  src/components/prontuario/anamnese-tab.tsx  [REESCRITO]
+    · buildMissingIds(): detecta perguntas sem resposta
+    · setAnswer(): limpa detalhe ao escolher Não
+    · Alerta vermelho com AlertCircle quando há campos faltantes
+    · Botões Sim/Não com novas cores
+    · Campo condicional com transition show/hide
+
+============================================================
+2. ABA PRESCRIÇÕES E LAUDOS
+============================================================
+
+2.1 Migration Supabase
+  Migration: create_prescriptions
+  Tabela: public.prescriptions
+    id           uuid PK
+    tenant_id    uuid FK → tenants
+    patient_id   uuid FK → patients
+    doctor_id    uuid FK → doctors
+    medications  jsonb  — array de { name, dosage, frequency, duration }
+    instructions text   — orientações ao paciente
+    notes        text   — observações internas (não impressas)
+    created_at   timestamptz
+    updated_at   timestamptz
+    deleted_at   timestamptz (soft delete)
+
+  Índices: idx_prescriptions_tenant_patient, idx_prescriptions_patient
+  RLS: prescriptions_mvp_anon (FOR ALL TO anon, authenticated)
+
+2.2 Serviço: prescriptions-service.ts  [CRIADO]
+  Interfaces:
+    MedicationItem: { name, dosage, frequency, duration }
+    PrescriptionDoctor: { id, crm, specialty, users: { name, email } }
+    PrescriptionPatient: { id, name, date_of_birth }
+    PrescriptionRow: campos completos + joins
+    CreatePrescriptionPayload
+
+  Funções:
+    listPrescriptionsByPatient(tenantId, patientId) → PrescriptionRow[]
+    createPrescription(payload) → PrescriptionRow
+    deletePrescription(id, tenantId) → void
+
+2.3 Componente: prescricoes-tab.tsx  [CRIADO]
+
+  NovaReceitaModal:
+    · Cabeçalho médico somente leitura: nome + CRM buscados do cadastro
+      do usuário logado (doctors → users via resolveDoctorId)
+    · Bloco paciente preenchido automaticamente
+    · Lista dinâmica de medicamentos (adicionar/remover)
+      Campos por medicamento: nome*, posologia, frequência, duração
+    · Campo de orientações ao paciente
+    · Campo de observações internas
+    · Validação: ao menos 1 medicamento com nome preenchido
+
+  PrescriptionCard (histórico):
+    · Cabeçalho: data, quantidade de medicamentos
+    · Info do médico: avatar com iniciais, nome, CRM, especialidade
+    · Lista numerada de medicamentos com posologia
+    · Expandível: orientações + observações
+    · Botão Imprimir (window.print)
+    · Botão Excluir com confirmação
+
+  PrescricoesTab:
+    · Barra com contador de receitas + botão "Nova Receita"
+    · Carrega médico logado ao montar (resolveDoctorId + query doctors)
+    · Estado vazio com link para emitir primeira receita
+
+2.4 Integração em prontuario/page.tsx
+  · Import PrescricoesTab adicionado
+  · Aba "Prescrições e Laudos" renderiza <PrescricoesTab> com
+    tenantId, patientId, patientName (displayName do paciente)
+
+============================================================
+3. ABA ANEXOS
+============================================================
+
+3.1 Migration Supabase
+  Migration: create_patient_attachments
+
+  Storage bucket: patient-attachments
+    · public: true
+    · file_size_limit: 52428800 (50 MB)
+    · allowed_mime_types: jpeg, jpg, png, gif, webp, pdf, mp4,
+      quicktime, avi, msword, docx
+
+  Storage policies:
+    · patient_attachments_select: SELECT TO anon, authenticated
+    · patient_attachments_insert: INSERT TO anon, authenticated
+    · patient_attachments_delete: DELETE TO anon, authenticated
+
+  Tabela: public.patient_attachments
+    id           uuid PK
+    tenant_id    uuid FK → tenants
+    patient_id   uuid FK → patients
+    file_name    text
+    file_type    text (MIME)
+    file_size    bigint (bytes)
+    storage_path text (caminho no bucket)
+    public_url   text (URL pública do Storage)
+    created_at   timestamptz
+    deleted_at   timestamptz (soft delete)
+
+  RLS: attachments_mvp_anon (FOR ALL TO anon, authenticated)
+
+3.2 Serviço: attachments-service.ts  [CRIADO]
+  Helpers:
+    formatFileSize(bytes) → "1.2 MB"
+    fileCategory(mimeType) → 'image' | 'pdf' | 'video' | 'doc' | 'other'
+
+  Funções:
+    listAttachments(tenantId, patientId) → AttachmentRow[]
+    uploadAttachment(tenantId, patientId, file):
+      1. Upload ao Storage (path: {tenantId}/{patientId}/{ts}_{filename})
+      2. Obtém URL pública via getPublicUrl()
+      3. Insere metadados na tabela patient_attachments
+    deleteAttachment(attachment, tenantId):
+      1. Remove arquivo do Storage
+      2. Soft delete na tabela
+
+3.3 Componente: anexos-tab.tsx  [CRIADO]
+
+  Zona de upload:
+    · Clique para abrir seletor de arquivos (múltiplos)
+    · Drag & Drop nativo (onDragOver, onDrop)
+    · Estados visuais: idle / dragOver / uploading
+    · Validação de tamanho (máx 50 MB por arquivo)
+    · Upload em loop com feedback individual por arquivo
+
+  Grid de arquivos:
+    · 2 a 5 colunas responsivas (grid-cols-2 → xl:grid-cols-5)
+    · AttachmentCard por arquivo:
+        - Preview real para imagens (object-cover)
+        - Hover: overlay com ícone de lupa
+        - Click na imagem → lightbox tela cheia (fundo preto/80%)
+        - Ícone colorido por categoria para demais tipos
+        - Nome (truncado), tamanho formatado, data
+        - Botão Baixar (link download direto da URL pública)
+        - Botão Excluir com confirmação
+
+3.4 Integração em prontuario/page.tsx
+  · Import AnexosTab adicionado
+  · Aba "Anexos" renderiza <AnexosTab tenantId patientId>
+
+============================================================
+4. ARQUIVOS TOCADOS NESTA SESSÃO
+============================================================
+Frontend:
+  src/services/anamnese-service.ts              [EDITADO]
+  src/components/prontuario/anamnese-tab.tsx    [REESCRITO]
+  src/services/prescriptions-service.ts         [CRIADO]
+  src/components/prontuario/prescricoes-tab.tsx [CRIADO]
+  src/services/attachments-service.ts           [CRIADO]
+  src/components/prontuario/anexos-tab.tsx      [CRIADO]
+  src/app/(dashboard)/prontuario/page.tsx       [EDITADO]
+    · Import PrescricoesTab e AnexosTab
+    · Condicional de tabs expandida
+
+Banco Supabase (qakfcyurfroqjvykbdwe):
+  Migration: create_prescriptions
+    · Tabela public.prescriptions
+  Migration: create_patient_attachments
+    · Bucket storage patient-attachments
+    · Tabela public.patient_attachments
+
+Histórico:
+  Histórico de desenvolvimento/
+    Resumo Desenvolvimento 21_05_2026_parte9.txt  [CRIADO]
+
+============================================================
+5. PENDÊNCIAS ATUALIZADAS
+============================================================
+
+RESOLVIDAS NESTA SESSÃO:
+  [x] Anamnese: validação de preenchimento completo antes de salvar
+  [x] Anamnese: cores corrigidas (Sim=verde, Não=vermelho)
+  [x] Anamnese: input condicional para autoimmune, medications, surgery, allergies
+  [x] Anamnese: pergunta alergia migrada para sim_nao
+  [x] Aba Prescrições e Laudos funcional (Nova Receita + histórico)
+  [x] Receita pré-preenchida com nome e CRM do médico logado
+  [x] Aba Anexos com upload de mídias (imagens, PDF, vídeo, doc)
+  [x] Preview de imagens com lightbox
+  [x] Drag & Drop na zona de upload
+
+AINDA ABERTAS (herdadas):
+  [ ] (A.1) Substituir [YOUR-DB-PASSWORD] em backend/.env
+  [ ] (A.2) Substituir SERVICE_ROLE_KEY em backend/.env
+  [ ] (A.3) Confirmar JWT_SECRET e JWT_REFRESH_SECRET
+  [ ] (A.4) Rodar localmente: npm install, prisma generate, migrate resolve
+  [ ] (A.5) Dropar policies mvp_anon quando backend subir
+  [ ] (B.1) DashboardLayout: isLoading travado sem login
+  [ ] (B.2) registerFirstUser sem transação (tenant órfão)
+  [ ] (B.3) Senha SHA-256 client-side — migrar para bcrypt
+  [ ] (B.4) Warnings SECURITY DEFINER em rls_auto_enable()
+  [ ] (B.6) prisma/seed.ts ainda não existe
+  [ ] (B.7) TOP 10 produtos usa appointments.type como proxy
+  [ ] (D.1) cancelAppointment() órfão em appointments-service
+  [ ] Demais abas do prontuário: Plano de tratamento, Harmonização,
+      Contratos e Termos, Financeiro, Convênios
+
+============================================================
+FIM DO RELATÓRIO — 21/05/2026 (parte 9)
+============================================================

@@ -99,8 +99,7 @@ export default function RegisterPage() {
       <div className="space-y-4">
         <h1 className="text-2xl font-heading font-bold text-[#406B5B]">Cadastro indisponível</h1>
         <p className="text-sm text-[#406B5B]/70">
-          Já existe um usuário cadastrado nesta ferramenta. Apenas um usuário pode ser criado por
-          instância. Faça login para continuar.
+          O limite de 2 usuários por instância foi atingido. Faça login para continuar.
         </p>
         <Link
           href="/login"

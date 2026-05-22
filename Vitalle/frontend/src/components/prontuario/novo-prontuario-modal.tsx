@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { toast } from 'sonner';
 import { ModalShell } from '@/components/dashboard/modal-shell';
 import { Search, User, CreditCard, Loader2, CheckCircle } from 'lucide-react';
@@ -17,6 +17,7 @@ interface NovoProntuarioModalProps {
   open: boolean;
   onClose: () => void;
   onCreated?: (record: MedicalRecordRow) => void;
+  preselectedPatientId?: string;
 }
 
 interface PatientHit {
@@ -47,7 +48,7 @@ const INITIAL_FORM = {
   prescription: '',
 };
 
-export function NovoProntuarioModal({ open, onClose, onCreated }: NovoProntuarioModalProps) {
+export function NovoProntuarioModal({ open, onClose, onCreated, preselectedPatientId }: NovoProntuarioModalProps) {
   const user = useAuthStore((s) => s.user);
 
   const [cpfSearch, setCpfSearch]       = useState('');
@@ -56,6 +57,14 @@ export function NovoProntuarioModal({ open, onClose, onCreated }: NovoProntuario
   const [notFound, setNotFound]         = useState(false);
   const [form, setForm]                 = useState(INITIAL_FORM);
   const [submitting, setSubmitting]     = useState(false);
+
+  // Pré-seleciona paciente se vier com preselectedPatientId
+  useEffect(() => {
+    if (!open || !preselectedPatientId || !user?.tenantId) return;
+    supabase.from('patients').select('id, name, cpf, phone')
+      .eq('id', preselectedPatientId).single()
+      .then(({ data }) => { if (data) setPatient(data as PatientHit); });
+  }, [open, preselectedPatientId, user?.tenantId]);
 
   const reset = () => {
     setCpfSearch('');

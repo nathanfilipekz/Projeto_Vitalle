@@ -8,6 +8,14 @@ export interface MedicalRecordPatient {
   cpf: string;
   phone: string;
   date_of_birth: string | null;
+  gender: string | null;
+}
+
+export interface MedicalRecordDoctor {
+  id: string;
+  crm: string | null;
+  specialty: string | null;
+  users: { name: string; email: string } | null;
 }
 
 export interface MedicalRecordRow {
@@ -32,6 +40,7 @@ export interface MedicalRecordRow {
   deleted_at: string | null;
   // joined
   patients: MedicalRecordPatient | null;
+  doctors:  MedicalRecordDoctor  | null;
 }
 
 export interface CreateMedicalRecordPayload {
@@ -77,7 +86,7 @@ export async function resolveDoctorId(tenantId: string, userId: string): Promise
 export async function listMedicalRecords(tenantId: string): Promise<MedicalRecordRow[]> {
   const { data, error } = await supabase
     .from('medical_records')
-    .select('*, patients ( id, name, cpf, phone, date_of_birth )')
+    .select('*, patients ( id, name, cpf, phone, date_of_birth, gender ), doctors ( id, crm, specialty, users ( name, email ) )')
     .eq('tenant_id', tenantId)
     .is('deleted_at', null)
     .order('created_at', { ascending: false });
@@ -91,7 +100,7 @@ export async function getMedicalRecordsByPatient(
 ): Promise<MedicalRecordRow[]> {
   const { data, error } = await supabase
     .from('medical_records')
-    .select('*, patients ( id, name, cpf, phone, date_of_birth )')
+    .select('*, patients ( id, name, cpf, phone, date_of_birth, gender ), doctors ( id, crm, specialty, users ( name, email ) )')
     .eq('tenant_id', tenantId)
     .eq('patient_id', patientId)
     .is('deleted_at', null)
@@ -137,7 +146,7 @@ export async function createMedicalRecord(
   const { data, error } = await supabase
     .from('medical_records')
     .insert(insert)
-    .select('*, patients ( id, name, cpf, phone, date_of_birth )')
+    .select('*, patients ( id, name, cpf, phone, date_of_birth, gender ), doctors ( id, crm, specialty, users ( name, email ) )')
     .single();
   if (error || !data) throw new Error(error?.message || 'Falha ao criar prontuario.');
   return data as MedicalRecordRow;
@@ -163,7 +172,7 @@ export async function updateMedicalRecord(
     .update(upd)
     .eq('id', id)
     .eq('tenant_id', tenantId)
-    .select('*, patients ( id, name, cpf, phone, date_of_birth )')
+    .select('*, patients ( id, name, cpf, phone, date_of_birth, gender ), doctors ( id, crm, specialty, users ( name, email ) )')
     .single();
   if (error || !data) throw new Error(error?.message || 'Falha ao atualizar prontuario.');
   return data as MedicalRecordRow;

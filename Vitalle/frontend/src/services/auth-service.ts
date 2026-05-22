@@ -40,7 +40,7 @@ export async function hasAnyUser(): Promise<boolean> {
     console.error('[authService.hasAnyUser]', error);
     return false;
   }
-  return (count ?? 0) > 0;
+  return (count ?? 0) >= 2;
 }
 
 function makeFakeCnpj(): string {

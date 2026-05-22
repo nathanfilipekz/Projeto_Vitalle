@@ -1,0 +1,196 @@
+============================================================
+RESUMO DE DESENVOLVIMENTO - VITALLE
+Data: 21/05/2026 (sessão — parte 7)
+Tipo: Correções visuais + Campos de endereço com busca de CEP
+Autor: Assistente Claude
+============================================================
+
+ÍNDICE
+------
+1. Correção do dropdown OPÇÕES (overflow)
+2. Novos campos de endereço no banco (migration)
+3. Modais Novo/Editar Paciente — seção de endereço completa + busca CEP
+4. Remoção da coluna Código da tabela de pacientes
+5. Arquivos tocados nesta sessão
+6. PENDÊNCIAS atualizadas
+
+============================================================
+1. CORREÇÃO DO DROPDOWN OPÇÕES (overflow)
+============================================================
+Problema:
+  O dropdown do botão OPÇÕES na tabela de pacientes era cortado
+  pelo container pai que usava overflow-hidden e overflow-x-auto.
+  As opções "Editar Paciente" e "Prontuário do Paciente" não
+  apareciam completamente.
+
+Solução:
+  Arquivo: src/app/(dashboard)/pacientes/page.tsx
+
+  · Removido overflow-hidden do container externo da tabela
+    (mantido apenas o arredondamento via rounded-2xl)
+  · rounded-t-2xl adicionado ao banner de resultado de busca
+    para compensar a remoção do overflow-hidden
+  · overflow-x-auto removido do wrapper interno da tabela
+    (substituído por w-full simples)
+  · z-index do dropdown elevado de z-30 para z-50
+  · shadow-xl → shadow-2xl para melhor destaque visual
+
+============================================================
+2. NOVOS CAMPOS DE ENDEREÇO NO BANCO (MIGRATION)
+============================================================
+Migration aplicada via MCP Supabase:
+  Nome: add_address_fields_to_patients
+
+  ALTER TABLE public.patients
+    ADD COLUMN IF NOT EXISTS address_number     text,
+    ADD COLUMN IF NOT EXISTS address_complement text,
+    ADD COLUMN IF NOT EXISTS neighborhood       text;
+
+Campos já existentes no banco (não alterados):
+  zip_code, address, city, state
+
+Resultado: tabela patients agora possui estrutura completa
+  de endereço com 7 campos dedicados.
+
+============================================================
+3. MODAIS NOVO/EDITAR PACIENTE — ENDEREÇO + CEP
+============================================================
+Arquivos modificados:
+  src/components/dashboard/new-patient-modal.tsx    [REESCRITO]
+  src/components/pacientes/edit-patient-modal.tsx   [REESCRITO]
+  src/services/patients-service.ts                  [EDITADO]
+
+3.1 patients-service.ts
+  Interfaces atualizadas:
+    PatientRow:
+      + zip_code, address_number, address_complement,
+        neighborhood (campos já existentes: address, city, state)
+
+    CreatePatientPayload / UpdatePatientPayload:
+      + zipCode, addressNumber, addressComplement,
+        neighborhood, city, state
+
+  Funções atualizadas:
+    createPatient() → inclui todos os novos campos no INSERT
+    updatePatient() → inclui todos os novos campos no UPDATE
+
+3.2 Novo layout de endereço nos modais
+  Campo antigo: "Endereço" (campo de texto livre único)
+  Substituído por seção dedicada com divisor visual:
+
+  ┌─ [📍] ENDEREÇO ─────────────────────────────────────┐
+  │  CEP [_____-___]  [🔍 Buscar CEP]                   │
+  │  Endereço (2/3)              | Número (1/3)          │
+  │  Complemento (APTO / BLOCO)                          │
+  │  Cidade (1/3) | Bairro (1/3) | UF (1/3)             │
+  └──────────────────────────────────────────────────────┘
+
+3.3 Busca automática de CEP (ViaCEP)
+  API: https://viacep.com.br/ws/{cep}/json/
+  Gatilhos:
+    · Clique no botão "Buscar CEP"
+    · Enter no campo CEP
+  Campos preenchidos automaticamente:
+    · Endereço  ← data.logradouro
+    · Bairro    ← data.bairro
+    · Cidade    ← data.localidade
+    · UF        ← data.uf
+  Estados de erro tratados:
+    · CEP com menos de 8 dígitos → "CEP deve ter 8 dígitos."
+    · data.erro = true → "CEP não encontrado."
+    · Falha de rede → "Erro ao buscar CEP. Tente novamente."
+  Loading state: spinner no botão durante a requisição
+
+3.4 Máscaras implementadas
+  · CEP:     _____-___ (maskCEP)
+  · CPF:     000.000.000-00 (já existia)
+  · Telefone: (11) 99999-9999 (já existia)
+
+3.5 EditPatientModal — pré-preenchimento
+  useEffect atualizado para preencher todos os novos campos
+  ao abrir o modal com paciente existente:
+    zipCode           ← patient.zip_code (com máscara CEP)
+    address           ← patient.address
+    addressNumber     ← patient.address_number
+    addressComplement ← patient.address_complement
+    neighborhood      ← patient.neighborhood
+    city              ← patient.city
+    state             ← patient.state
+
+============================================================
+4. REMOÇÃO DA COLUNA CÓDIGO DA TABELA DE PACIENTES
+============================================================
+Arquivo: src/app/(dashboard)/pacientes/page.tsx
+
+  · Coluna <th>Código</th> removida do cabeçalho
+  · Célula <td>{index}</td> removida de cada linha
+  · A prop index ainda é passada ao componente mas não renderizada
+    (pode ser removida em refactor futuro)
+
+Resultado: tabela agora exibe colunas Nome | Telefones | CPF | E-Mail | (ações)
+
+============================================================
+5. ARQUIVOS TOCADOS NESTA SESSÃO
+============================================================
+Frontend:
+  src/app/(dashboard)/pacientes/page.tsx            [EDITADO]
+    · overflow corrigido no container da tabela
+    · z-index dropdown: z-30 → z-50
+    · coluna Código removida
+
+  src/services/patients-service.ts                  [EDITADO]
+    · PatientRow + 3 novos campos
+    · CreatePatientPayload + 6 novos campos
+    · UpdatePatientPayload + 6 novos campos
+    · createPatient() e updatePatient() atualizados
+
+  src/components/dashboard/new-patient-modal.tsx    [REESCRITO]
+    · Seção de endereço completa (7 campos)
+    · Busca automática de CEP via ViaCEP
+
+  src/components/pacientes/edit-patient-modal.tsx   [REESCRITO]
+    · Seção de endereço completa (7 campos)
+    · Busca automática de CEP via ViaCEP
+    · Pré-preenchimento de todos os campos
+
+Banco Supabase (qakfcyurfroqjvykbdwe):
+  Migration: add_address_fields_to_patients
+    · patients.address_number     text (nova)
+    · patients.address_complement text (nova)
+    · patients.neighborhood       text (nova)
+
+Histórico:
+  Histórico de desenvolvimento/
+    Resumo Desenvolvimento 21_05_2026_parte7.txt    [CRIADO]
+
+============================================================
+6. PENDÊNCIAS ATUALIZADAS
+============================================================
+
+RESOLVIDAS NESTA SESSÃO:
+  [x] Dropdown OPÇÕES aparece completo (overflow corrigido)
+  [x] Campos de endereço estruturados (CEP, logradouro, número,
+      complemento, bairro, cidade, UF)
+  [x] Busca automática de CEP via ViaCEP nos dois modais
+  [x] Banco atualizado com os 3 novos campos de endereço
+  [x] Coluna Código removida da tabela de pacientes
+
+AINDA ABERTAS (herdadas):
+  [ ] (A.1) Substituir [YOUR-DB-PASSWORD] em backend/.env
+  [ ] (A.2) Substituir SERVICE_ROLE_KEY em backend/.env
+  [ ] (A.3) Confirmar JWT_SECRET e JWT_REFRESH_SECRET
+  [ ] (A.4) Rodar localmente: npm install, prisma generate, migrate resolve
+  [ ] (A.5) Dropar policies mvp_anon quando backend subir
+  [ ] (B.1) DashboardLayout: isLoading travado sem login
+  [ ] (B.2) registerFirstUser sem transação (tenant órfão)
+  [ ] (B.3) Senha SHA-256 client-side — migrar para bcrypt
+  [ ] (B.4) Warnings SECURITY DEFINER em rls_auto_enable()
+  [ ] (B.6) prisma/seed.ts ainda não existe
+  [ ] (B.7) TOP 10 produtos usa appointments.type como proxy
+  [ ] (D.1) cancelAppointment() órfão em appointments-service
+  [ ] prop index no PatientTableRow pode ser removida em refactor
+  [ ] Fases 0–6 do plano original abertas
+
+============================================================
+FIM DO RELATÓRIO — 21/05/2026 (parte 7)
+============================================================

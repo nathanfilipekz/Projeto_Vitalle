@@ -4,8 +4,7 @@ import { useEffect, useState, useCallback, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { Header } from '@/components/layout/header';
 import {
-  Plus, Search, Phone, Mail, MoreVertical,
-  FileText, Eye, Loader2, UserX, Calendar, X, Pencil, Trash2, AlertTriangle,
+  Plus, Search, Loader2, UserX, X, Pencil, FileText, ChevronDown,
 } from 'lucide-react';
 import { formatCPF, formatPhone } from '@/lib/utils';
 import { useAuthStore } from '@/store/auth-store';
@@ -16,17 +15,17 @@ import {
 } from '@/services/patients-service';
 import { NewPatientModal } from '@/components/dashboard/new-patient-modal';
 import { EditPatientModal } from '@/components/pacientes/edit-patient-modal';
-import { PatientDetailsModal } from '@/components/pacientes/patient-details-modal';
 
-// Dropdown do card
-interface CardMenuProps {
+/* ------------------------------------------------------------------ */
+/* Dropdown OPÇÕES                                                       */
+/* ------------------------------------------------------------------ */
+interface RowMenuProps {
   patient: PatientRow;
   onEdit: (p: PatientRow) => void;
-  onDelete: (p: PatientRow) => void;
+  onProntuario: (p: PatientRow) => void;
 }
 
-function CardMenu({ patient, onEdit, onDelete }: CardMenuProps) {
-  const [confirm, setConfirm] = useState(false);
+function RowMenu({ patient, onEdit, onProntuario }: RowMenuProps) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
 
@@ -40,147 +39,92 @@ function CardMenu({ patient, onEdit, onDelete }: CardMenuProps) {
   }, [open]);
 
   return (
-    <div ref={ref} className="relative shrink-0">
+    <div ref={ref} className="relative">
       <button
-        onClick={(e) => { e.stopPropagation(); setConfirm(false); setOpen((v) => !v); }}
-        className="p-1.5 rounded-lg hover:bg-[#E4D5C3]/40 transition-colors text-[#406B5B]/50 hover:text-[#406B5B]"
-        aria-label="Opcoes"
+        onClick={(e) => { e.stopPropagation(); setOpen((v) => !v); }}
+        className="flex items-center gap-1.5 px-3 py-1.5 bg-[#406B5B] text-white text-xs font-semibold rounded-lg hover:bg-[#406B5B]/90 transition-colors shadow-sm"
       >
-        <MoreVertical className="w-4 h-4" />
+        OPÇÕES
+        <ChevronDown className={`w-3.5 h-3.5 transition-transform ${open ? 'rotate-180' : ''}`} />
       </button>
 
       {open && (
-        <div className="absolute right-0 top-8 z-20 w-52 bg-white rounded-xl shadow-lg border border-[#E4D5C3] py-1 animate-in fade-in zoom-in-95">
+        <div className="absolute right-0 top-9 z-50 w-52 bg-[#1a1a1a] rounded-xl shadow-2xl border border-white/10 py-1 animate-in fade-in zoom-in-95">
           <button
-            onClick={() => { setOpen(false); setConfirm(false); onEdit(patient); }}
-            className="flex items-center gap-2 w-full px-3 py-2 text-sm text-[#406B5B] hover:bg-[#E4D5C3]/30 transition-colors"
+            onClick={() => { setOpen(false); onEdit(patient); }}
+            className="flex items-center gap-2.5 w-full px-4 py-2.5 text-sm text-white hover:bg-white/10 transition-colors"
           >
-            <Pencil className="w-3.5 h-3.5" />
-            Editar cadastro
+            <Pencil className="w-4 h-4 text-[#91AE9E]" />
+            Editar Paciente
           </button>
-
-          <div className="mx-2 my-1 border-t border-[#E4D5C3]/60" />
-
-          {!confirm ? (
-            <button
-              onClick={() => setConfirm(true)}
-              className="flex items-center gap-2 w-full px-3 py-2 text-sm text-red-500 hover:bg-red-50 transition-colors"
-            >
-              <Trash2 className="w-3.5 h-3.5" />
-              Excluir paciente
-            </button>
-          ) : (
-            <div className="px-3 py-2">
-              <div className="flex items-center gap-1.5 text-xs text-red-600 font-medium mb-2">
-                <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
-                Confirmar exclusao?
-              </div>
-              <div className="flex gap-2">
-                <button
-                  onClick={() => { setOpen(false); setConfirm(false); onDelete(patient); }}
-                  className="flex-1 px-2 py-1 text-xs bg-red-500 text-white rounded-lg hover:bg-red-600 transition-colors font-medium"
-                >
-                  Excluir
-                </button>
-                <button
-                  onClick={() => setConfirm(false)}
-                  className="flex-1 px-2 py-1 text-xs border border-[#E4D5C3] text-[#406B5B] rounded-lg hover:bg-[#E4D5C3]/30 transition-colors"
-                >
-                  Cancelar
-                </button>
-              </div>
-            </div>
-          )}
+          <button
+            onClick={() => { setOpen(false); onProntuario(patient); }}
+            className="flex items-center gap-2.5 w-full px-4 py-2.5 text-sm text-white hover:bg-white/10 transition-colors"
+          >
+            <FileText className="w-4 h-4 text-[#91AE9E]" />
+            Prontuário do Paciente
+          </button>
         </div>
       )}
     </div>
   );
 }
 
-// Card do paciente
-interface PatientCardProps {
+/* ------------------------------------------------------------------ */
+/* Linha da tabela                                                       */
+/* ------------------------------------------------------------------ */
+interface PatientRowProps {
+  index: number;
   patient: PatientRow;
   onEdit: (p: PatientRow) => void;
-  onDelete: (p: PatientRow) => void;
-  onDetails: (p: PatientRow) => void;
   onProntuario: (p: PatientRow) => void;
 }
 
-function PatientCard({ patient, onEdit, onDelete, onDetails, onProntuario }: PatientCardProps) {
+function PatientTableRow({ index, patient, onEdit, onProntuario }: PatientRowProps) {
   const initials = patient.name
     .split(' ').map((n: string) => n[0]).filter(Boolean).slice(0, 2).join('').toUpperCase();
 
   return (
-    <div className="bg-white rounded-2xl p-6 border border-[#E4D5C3]/50 shadow-sm hover:shadow-md transition-all">
-      <div className="flex items-start justify-between mb-4">
-        <div className="flex items-center gap-3 min-w-0">
-          <div className="w-11 h-11 bg-[#91AE9E]/20 rounded-full flex items-center justify-center shrink-0">
-            <span className="text-[#406B5B] font-semibold text-sm">{initials}</span>
+    <tr className="border-b border-[#E4D5C3]/30 hover:bg-[#F7F3EE] transition-colors group">
+      {/* Nome */}
+      <td className="py-3.5 px-4">
+        <div className="flex items-center gap-3">
+          <div className="w-8 h-8 bg-[#91AE9E]/20 rounded-full flex items-center justify-center shrink-0">
+            <span className="text-[#406B5B] font-semibold text-xs">{initials}</span>
           </div>
-          <div className="min-w-0">
-            <h3 className="text-sm font-semibold text-[#406B5B] truncate">{patient.name}</h3>
-            <p className="text-xs text-[#406B5B]/50">CPF: {formatCPF(patient.cpf)}</p>
-          </div>
+          <span className="text-sm font-medium text-[#406B5B] uppercase">{patient.name}</span>
         </div>
-        <CardMenu patient={patient} onEdit={onEdit} onDelete={onDelete} />
-      </div>
+      </td>
 
-      <div className="space-y-1.5 mb-4">
-        <div className="flex items-center gap-2 text-xs text-[#406B5B]/60">
-          <Phone className="w-3.5 h-3.5 shrink-0" />
-          <span>{formatPhone(patient.phone)}</span>
-        </div>
-        {patient.email && (
-          <div className="flex items-center gap-2 text-xs text-[#406B5B]/60">
-            <Mail className="w-3.5 h-3.5 shrink-0" />
-            <span className="truncate">{patient.email}</span>
-          </div>
-        )}
-        {patient.date_of_birth && (
-          <div className="flex items-center gap-2 text-xs text-[#406B5B]/60">
-            <Calendar className="w-3.5 h-3.5 shrink-0" />
-            <span>
-              {new Date(patient.date_of_birth).toLocaleDateString('pt-BR', { timeZone: 'UTC' })}
-            </span>
-          </div>
-        )}
-      </div>
+      {/* Telefone */}
+      <td className="py-3.5 px-4 text-sm text-[#406B5B]/70">
+        {patient.phone ? formatPhone(patient.phone) : '—'}
+      </td>
 
-      <div className="flex items-center justify-between pt-4 border-t border-[#E4D5C3]/30">
-        <span
-          className={`text-xs font-medium px-2 py-0.5 rounded-full ${
-            patient.is_active
-              ? 'bg-[#406B5B]/10 text-[#406B5B]'
-              : 'bg-gray-100 text-gray-400'
-          }`}
-        >
-          {patient.is_active ? 'Ativo' : 'Inativo'}
-        </span>
-        <div className="flex items-center gap-2">
-          <button
-            onClick={() => onProntuario(patient)}
-            className="p-1.5 rounded-lg hover:bg-[#91AE9E]/10 transition-colors"
-            title="Ver prontuario"
-          >
-            <FileText className="w-4 h-4 text-[#406B5B]/60" />
-          </button>
-          <button
-            onClick={() => onDetails(patient)}
-            className="p-1.5 rounded-lg hover:bg-[#91AE9E]/10 transition-colors"
-            title="Ver detalhes"
-          >
-            <Eye className="w-4 h-4 text-[#406B5B]/60" />
-          </button>
-        </div>
-      </div>
-    </div>
+      {/* CPF */}
+      <td className="py-3.5 px-4 text-sm text-[#406B5B]/70">
+        {patient.cpf ? formatCPF(patient.cpf) : '—'}
+      </td>
+
+      {/* E-Mail */}
+      <td className="py-3.5 px-4 text-sm text-[#406B5B]/70 max-w-[200px] truncate">
+        {patient.email || '—'}
+      </td>
+
+      {/* Ações */}
+      <td className="py-3.5 px-4 text-right">
+        <RowMenu patient={patient} onEdit={onEdit} onProntuario={onProntuario} />
+      </td>
+    </tr>
   );
 }
 
-// Page
+/* ------------------------------------------------------------------ */
+/* Page                                                                  */
+/* ------------------------------------------------------------------ */
 export default function PacientesPage() {
-  const user = useAuthStore((s) => s.user);
-  const router = useRouter();
+  const user    = useAuthStore((s) => s.user);
+  const router  = useRouter();
 
   const [patients, setPatients]         = useState<PatientRow[]>([]);
   const [stats, setStats]               = useState<PatientStats>({ total: 0, thisMonth: 0 });
@@ -188,8 +132,6 @@ export default function PacientesPage() {
   const [search, setSearch]             = useState('');
   const [showNewModal, setShowNewModal] = useState(false);
   const [editPatient, setEditPatient]   = useState<PatientRow | null>(null);
-  const [detailPatient, setDetailPatient] = useState<PatientRow | null>(null);
-  const [deleting, setDeleting]         = useState(false);
 
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -218,26 +160,24 @@ export default function PacientesPage() {
     debounceRef.current = setTimeout(() => loadPatients(value), 300);
   };
 
-  const clearSearch = () => { setSearch(''); loadPatients(''); };
+  const clearSearch  = () => { setSearch(''); loadPatients(''); };
   const handleAfterSave = () => { loadPatients(search); loadStats(); };
-
-  const handleDelete = async (patient: PatientRow) => {
-    if (!user?.tenantId || deleting) return;
-    setDeleting(true);
-    try {
-      await deletePatient(patient.id, user.tenantId);
-      toast.success('Paciente excluido', { description: `${patient.name} foi removido da base.` });
-      loadPatients(search);
-      loadStats();
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Nao foi possivel excluir o paciente.');
-    } finally {
-      setDeleting(false);
-    }
-  };
 
   const handleProntuario = (patient: PatientRow) => {
     router.push(`/prontuario?pacienteId=${patient.id}&nome=${encodeURIComponent(patient.name)}`);
+  };
+
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const handleDelete = async (patient: PatientRow) => {
+    if (!user?.tenantId) return;
+    try {
+      await deletePatient(patient.id, user.tenantId);
+      toast.success('Paciente excluído', { description: `${patient.name} foi removido da base.` });
+      loadPatients(search);
+      loadStats();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Não foi possível excluir o paciente.');
+    }
   };
 
   return (
@@ -245,7 +185,7 @@ export default function PacientesPage() {
       <Header title="Pacientes" subtitle="Gerencie seus pacientes" />
 
       <div className="p-8">
-        {/* Barra de acoes */}
+        {/* Barra de ações */}
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">
           <div className="relative flex-1 max-w-md">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[#406B5B]/40 pointer-events-none" />
@@ -265,26 +205,26 @@ export default function PacientesPage() {
 
           <button
             onClick={() => setShowNewModal(true)}
-            className="flex items-center gap-2 px-4 py-2.5 bg-[#406B5B] text-white rounded-xl hover:bg-[#406B5B]/90 transition-colors text-sm font-medium shadow-sm whitespace-nowrap"
+            className="flex items-center gap-2 px-4 py-2.5 bg-[#406B5B] text-white rounded-xl hover:bg-[#406B5B]/90 transition-colors text-sm font-semibold shadow-sm whitespace-nowrap uppercase tracking-wide"
           >
             <Plus className="w-4 h-4" />
-            Novo Paciente
+            Criar Novo Paciente
           </button>
         </div>
 
-        {/* Estatisticas */}
+        {/* Estatísticas */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
           <div className="bg-white rounded-xl p-4 border border-[#E4D5C3]/50">
             <p className="text-sm text-[#406B5B]/60">Total de Pacientes</p>
             <p className="text-2xl font-bold text-[#406B5B] mt-1">{stats.total}</p>
           </div>
           <div className="bg-white rounded-xl p-4 border border-[#E4D5C3]/50">
-            <p className="text-sm text-[#406B5B]/60">Novos este mes</p>
+            <p className="text-sm text-[#406B5B]/60">Novos este mês</p>
             <p className="text-2xl font-bold text-[#91AE9E] mt-1">{stats.thisMonth}</p>
           </div>
         </div>
 
-        {/* Lista */}
+        {/* Tabela */}
         {loading ? (
           <div className="flex items-center justify-center py-24">
             <Loader2 className="w-8 h-8 animate-spin text-[#406B5B]/30" />
@@ -307,25 +247,39 @@ export default function PacientesPage() {
             )}
           </div>
         ) : (
-          <>
+          <div className="bg-white rounded-2xl border border-[#E4D5C3]/50 shadow-sm">
             {search.trim() && (
-              <p className="text-xs text-[#406B5B]/50 mb-4">
-                {patients.length} resultado{patients.length !== 1 ? 's' : ''} para &quot;{search}&quot;
-              </p>
+              <div className="px-4 py-2 border-b border-[#E4D5C3]/30 bg-[#F7F3EE] rounded-t-2xl">
+                <p className="text-xs text-[#406B5B]/50">
+                  {patients.length} resultado{patients.length !== 1 ? 's' : ''} para &quot;{search}&quot;
+                </p>
+              </div>
             )}
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              {patients.map((p) => (
-                <PatientCard
-                  key={p.id}
-                  patient={p}
-                  onEdit={setEditPatient}
-                  onDelete={handleDelete}
-                  onDetails={setDetailPatient}
-                  onProntuario={handleProntuario}
-                />
-              ))}
+            <div className="w-full">
+              <table className="w-full">
+                <thead>
+                  <tr className="border-b border-[#E4D5C3]/50 bg-[#F7F3EE]">
+                    <th className="py-3 px-4 text-left text-xs font-semibold text-[#406B5B]/60 uppercase tracking-wider">Nome</th>
+                    <th className="py-3 px-4 text-left text-xs font-semibold text-[#406B5B]/60 uppercase tracking-wider">Telefones</th>
+                    <th className="py-3 px-4 text-left text-xs font-semibold text-[#406B5B]/60 uppercase tracking-wider">CPF</th>
+                    <th className="py-3 px-4 text-left text-xs font-semibold text-[#406B5B]/60 uppercase tracking-wider">E-Mail</th>
+                    <th className="py-3 px-4 w-28" />
+                  </tr>
+                </thead>
+                <tbody>
+                  {patients.map((p, idx) => (
+                    <PatientTableRow
+                      key={p.id}
+                      index={idx + 1}
+                      patient={p}
+                      onEdit={setEditPatient}
+                      onProntuario={handleProntuario}
+                    />
+                  ))}
+                </tbody>
+              </table>
             </div>
-          </>
+          </div>
         )}
       </div>
 
@@ -340,13 +294,6 @@ export default function PacientesPage() {
         patient={editPatient}
         onClose={() => setEditPatient(null)}
         onUpdated={handleAfterSave}
-      />
-
-      <PatientDetailsModal
-        open={detailPatient !== null}
-        patient={detailPatient}
-        onClose={() => setDetailPatient(null)}
-        onEdit={(p) => { setDetailPatient(null); setEditPatient(p); }}
       />
     </div>
   );
